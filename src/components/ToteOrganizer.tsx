@@ -432,7 +432,11 @@ export default function ToteOrganizer() {
                   type: "text",
                   text: `You are cataloging items for a home storage inventory system. Look at this image and identify EVERY distinct physical object/item. Ignore the background, floor, table, or surface they're on.
 
-For each item, I need:
+Be precise and conservative:
+- If you are unsure, use a generic description (e.g., "black plastic container") rather than guessing a brand or model.
+- Do not invent text, brand names, or sizes that are not clearly visible.
+
+For each item, provide:
 1. A SHORT but SPECIFIC description (under 10 words) that someone would recognize, like:
    - "Blue Nike running shoes size 10"
    - "Black & Decker cordless drill"
@@ -440,18 +444,21 @@ For each item, I need:
    - "Box of assorted Christmas lights"
    - "Infant car seat - Graco gray"
 
-2. MANY searchable tags (10-20) that someone might type when looking for this item later:
-   - The exact item name and synonyms (drill, power drill, cordless drill)
-   - Brand if visible
-   - Colors
+2. MANY searchable tags (12-24) that someone might type when looking for this item later:
+   - Exact item name and synonyms (drill, power drill, cordless drill)
+   - Brand only if clearly visible
+   - Colors and patterns
    - Category (tools, kitchen, baby, sports, holiday, electronics, clothing, toys, etc.)
    - Material (plastic, metal, fabric, wood, glass)
-   - Size descriptors if relevant (small, large, infant, adult)
+   - Size descriptors if clearly visible (small, large, infant, adult)
    - Season/holiday if applicable (christmas, halloween, winter, summer)
    - Room it might belong in (garage, kitchen, nursery, closet)
-   - What it's used for (cooking, cleaning, storage, decoration)
+   - Use or function (cooking, cleaning, storage, decoration)
 
-Be thorough - if someone searches "red" or "christmas" or "baby" they should find relevant items.
+Self-check before finalizing:
+- Verify each item is distinct (not duplicates).
+- Replace any uncertain brand/model with a neutral description.
+- Ensure tags are relevant, non-redundant, and all lowercase.
 
 Return ONLY valid JSON: {"items": [{"description": "short item description", "tags": ["tag1", "tag2", "tag3", ...]}]}`
                 }
