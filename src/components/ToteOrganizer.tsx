@@ -940,7 +940,7 @@ Return ONLY valid JSON: {"items": [{"description": "short item description", "ta
             <span className="text-3xl animate-bounce">🐐</span>
             <h1 className="text-2xl font-bold ml-2">Totes McGoats</h1>
           </div>
-          <div className="flex justify-center gap-1.5 mb-4">
+          <div className="flex flex-wrap justify-center gap-2 mb-4">
             <div className="bg-white/15 px-3 py-2 rounded-xl text-sm font-medium flex items-center gap-2">
               <span>👤</span>
               <span>{userName || 'Guest'}</span>
