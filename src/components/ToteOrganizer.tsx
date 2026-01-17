@@ -162,6 +162,14 @@ export default function ToteOrganizer() {
     sessionStorage.removeItem('accessSession');
     setAccessGranted(false);
     setUserName('');
+    setTotes([]);
+    setRooms([]);
+    setCurrentTote('');
+    setCurrentRoom('');
+    setPreviewImage(null);
+    setAnalyzedItems([]);
+    setShowAddForm(false);
+    setSelectedTote(null);
   }, []);
 
   const unlockApp = useCallback(() => {
@@ -245,8 +253,10 @@ export default function ToteOrganizer() {
     return roomIconMap.get(name) || '📦';
   }, [roomIconMap]);
 
-  // Load totes and rooms from storage on mount
+  // Load totes and rooms from storage on login
   useEffect(() => {
+    if (!accessGranted) return;
+    storage.setNamespace(userName);
     const loadData = async () => {
       try {
         const keys = await storage.list('tote:');
@@ -277,7 +287,39 @@ export default function ToteOrganizer() {
       }
     };
     loadData();
-  }, []);
+  }, [accessGranted, userName]);
+
+  useEffect(() => {
+    if (!accessGranted) return;
+    const loadDraft = async () => {
+      const draftResult = await storage.get('draft:new-tote');
+      if (!draftResult) return;
+      try {
+        const draft = JSON.parse(draftResult.value);
+        if (draft.currentTote) setCurrentTote(draft.currentTote);
+        if (draft.currentRoom) setCurrentRoom(draft.currentRoom);
+        if (draft.previewImage) setPreviewImage(draft.previewImage);
+        if (Array.isArray(draft.analyzedItems)) setAnalyzedItems(draft.analyzedItems);
+      } catch {
+        // Ignore invalid draft data.
+      }
+    };
+    loadDraft();
+  }, [accessGranted]);
+
+  useEffect(() => {
+    if (!accessGranted) return;
+    const saveDraft = async () => {
+      const payload = JSON.stringify({
+        currentTote,
+        currentRoom,
+        previewImage,
+        analyzedItems,
+      });
+      await storage.set('draft:new-tote', payload);
+    };
+    saveDraft();
+  }, [accessGranted, currentTote, currentRoom, previewImage, analyzedItems]);
 
   const saveRooms = useCallback(async (updatedRooms: Room[]) => {
     try {
@@ -454,6 +496,7 @@ Return ONLY valid JSON: {"items": [{"description": "short item description", "ta
 
     try {
       await storage.set(`tote:${newTote.id}`, JSON.stringify(newTote));
+      await storage.delete('draft:new-tote');
       setTotes(prev => [...prev, newTote]);
       setCurrentTote('');
       setCurrentRoom('');
