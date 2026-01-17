@@ -1266,6 +1266,10 @@ export default function ToteOrganizer() {
             <button onClick={() => setShowRoomManager(true)} className="bg-white/20 hover:bg-white/30 p-2.5 rounded-xl transition-all focus-visible:ring-2 focus-visible:ring-yellow-300 focus-visible:outline-none" title="Manage Rooms" aria-label="Manage rooms">
               <Settings className="w-5 h-5" />
             </button>
+            <button onClick={exportData} className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-xl font-semibold transition-all flex items-center gap-2 shadow-md hover:shadow-lg focus-visible:ring-2 focus-visible:ring-yellow-300 focus-visible:outline-none" aria-label="Save backup to file">
+              <Download className="w-5 h-5" />
+              Save Backup
+            </button>
             <button onClick={() => setShowAddForm(true)} className="bg-white text-indigo-600 px-4 py-2 rounded-xl font-semibold hover:bg-yellow-100 hover:text-indigo-700 transition-all flex items-center gap-2 shadow-md hover:shadow-lg hover:scale-105 focus-visible:ring-2 focus-visible:ring-yellow-300 focus-visible:outline-none" aria-label="Create new tote">
               <Plus className="w-5 h-5" />
               New Tote
