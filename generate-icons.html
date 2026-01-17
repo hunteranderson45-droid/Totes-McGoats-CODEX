@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<head><title>Generate Icons</title></head>
+<body>
+  <h1>Icon Generator</h1>
+  <p>Click buttons to download icons, then move them to the /public folder.</p>
+  <button onclick="generate(192)">Download 192x192</button>
+  <button onclick="generate(512)">Download 512x512</button>
+  <script>
+    function generate(size) {
+      const canvas = document.createElement('canvas');
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext('2d');
+
+      // Background with rounded corners
+      ctx.fillStyle = '#4f46e5';
+      ctx.beginPath();
+      ctx.roundRect(0, 0, size, size, size * 0.2);
+      ctx.fill();
+
+      // Goat emoji
+      ctx.font = `${size * 0.5}px serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('🐐', size/2, size/2);
+
+      // Download
+      const link = document.createElement('a');
+      link.download = `icon-${size}.png`;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+    }
+  </script>
+</body>
+</html>
