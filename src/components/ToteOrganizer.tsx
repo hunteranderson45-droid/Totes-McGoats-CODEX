@@ -1202,11 +1202,11 @@ export default function ToteOrganizer() {
       {/* Header */}
       <div className={`${darkMode ? 'bg-gray-800' : 'bg-gradient-to-r from-purple-600 via-indigo-600 to-blue-500'} text-white sticky top-8 z-10 shadow-lg`}>
         <div className="px-4 py-4">
-          <div className="flex items-center justify-center mb-2">
+          <div className="flex items-center justify-center mb-1">
             <span className="text-3xl animate-bounce">🐐</span>
             <h1 className="text-2xl font-bold ml-2">Totes McGoats</h1>
-            <span className="ml-2 px-2 py-0.5 text-xs font-medium bg-white/20 rounded-full">v1.1</span>
           </div>
+          <p className="text-center text-yellow-200 text-xs font-semibold mb-2">Version 1.1</p>
           <p className="text-center text-white/80 text-sm mb-4">
             Organize by room, search by item, and snap a photo to auto-catalog.
           </p>
@@ -1272,8 +1272,10 @@ export default function ToteOrganizer() {
             </button>
           </div>
           <p className="text-center text-white/70 text-xs mb-4">Tip: Search by description, brand, color, or tag.</p>
-          <div className="mx-auto mb-4 max-w-md rounded-xl border border-yellow-200/60 bg-yellow-100/20 px-4 py-2 text-center text-xs text-yellow-100">
-            Data stays only on this exact URL. Use your production/custom domain to keep totes.
+          <div className="mx-auto mb-4 max-w-md rounded-xl border border-green-300/60 bg-green-500/20 px-4 py-3 text-center text-xs text-green-100">
+            <div className="font-semibold mb-1">📍 Your data is stored at:</div>
+            <div className="font-mono text-green-200 break-all">{window.location.origin}</div>
+            <div className="mt-1 text-green-200/80">Always use this URL to access your totes.</div>
           </div>
 
           <div className="flex flex-col sm:flex-row gap-2">
