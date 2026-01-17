@@ -30,3 +30,4 @@ Purpose: help Codex resume work without re-discovery.
 
 ## Decision Log
 - (add entries here with date + short rationale)
+ - 2026-01-17: Removed the "new UI" surface and pinned the app to the legacy UI only; deleted `src/components/next` and simplified `src/App.tsx` so Vercel deploys legacy flow.
