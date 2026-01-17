@@ -1272,11 +1272,39 @@ export default function ToteOrganizer() {
             </button>
           </div>
           <p className="text-center text-white/70 text-xs mb-4">Tip: Search by description, brand, color, or tag.</p>
-          <div className="mx-auto mb-4 max-w-md rounded-xl border border-green-300/60 bg-green-500/20 px-4 py-3 text-center text-xs text-green-100">
-            <div className="font-semibold mb-1">📍 Your data is stored at:</div>
-            <div className="font-mono text-green-200 break-all">{window.location.origin}</div>
-            <div className="mt-1 text-green-200/80">Always use this URL to access your totes.</div>
-          </div>
+          {(() => {
+            const url = window.location.origin;
+            const isPreview = url.includes('-git-') || url.includes('--') || /vercel\.app$/.test(url) && url.split('.')[0].length > 20;
+            const isLocalhost = url.includes('localhost');
+
+            if (isLocalhost) {
+              return (
+                <div className="mx-auto mb-4 max-w-md rounded-xl border border-yellow-400 bg-yellow-500/30 px-4 py-3 text-center text-xs text-yellow-100">
+                  <div className="font-semibold mb-1">⚠️ Development Mode</div>
+                  <div className="font-mono text-yellow-200 break-all">{url}</div>
+                  <div className="mt-1 text-yellow-200/80">Data here won't be on production. Export before deploying!</div>
+                </div>
+              );
+            }
+
+            if (isPreview) {
+              return (
+                <div className="mx-auto mb-4 max-w-md rounded-xl border border-red-400 bg-red-500/30 px-4 py-3 text-center text-xs text-red-100">
+                  <div className="font-semibold mb-1">🚨 PREVIEW URL - DATA WILL BE LOST!</div>
+                  <div className="font-mono text-red-200 break-all text-[10px]">{url}</div>
+                  <div className="mt-2 text-red-200 font-medium">Use your production URL instead to keep your data!</div>
+                </div>
+              );
+            }
+
+            return (
+              <div className="mx-auto mb-4 max-w-md rounded-xl border border-green-300/60 bg-green-500/20 px-4 py-3 text-center text-xs text-green-100">
+                <div className="font-semibold mb-1">✅ Production URL - Data is safe here</div>
+                <div className="font-mono text-green-200 break-all">{url}</div>
+                <div className="mt-1 text-green-200/80">Bookmark this URL to always access your totes.</div>
+              </div>
+            );
+          })()}
 
           <div className="flex flex-col sm:flex-row gap-2">
             <div className="relative flex-1">
