@@ -863,7 +863,8 @@ Return ONLY valid JSON: {"items": [{"description": "short item description", "ta
         <div className="bg-white rounded-2xl p-8 w-full max-w-sm text-center shadow-2xl">
           <div className="text-6xl mb-4">🔐🐐</div>
           <h1 className="text-2xl font-bold text-gray-800 mb-2">Totes McGoats</h1>
-          <p className="text-gray-500 mb-6">Enter your access details</p>
+          <p className="text-gray-500 mb-2">Enter your access details</p>
+          <p className="text-xs text-gray-400 mb-6">Your username keeps your totes separate.</p>
           <div className="space-y-4">
             <input
               type="text"
@@ -1027,11 +1028,14 @@ Return ONLY valid JSON: {"items": [{"description": "short item description", "ta
       {/* Header */}
       <div className={`${darkMode ? 'bg-gray-800' : 'bg-gradient-to-r from-purple-600 via-indigo-600 to-blue-500'} text-white sticky top-0 z-10 shadow-lg`}>
         <div className="px-4 py-4">
-          <div className="flex items-center justify-center mb-4">
+          <div className="flex items-center justify-center mb-2">
             <span className="text-3xl animate-bounce">🐐</span>
             <h1 className="text-2xl font-bold ml-2">Totes McGoats</h1>
           </div>
-          <div className="flex flex-wrap justify-center gap-2 mb-4">
+          <p className="text-center text-white/80 text-sm mb-4">
+            Organize by room, search by item, and snap a photo to auto-catalog.
+          </p>
+          <div className="flex flex-wrap justify-center gap-2 mb-3">
             <div className="bg-white/15 px-3 py-2 rounded-xl text-sm font-medium flex items-center gap-2">
               <span>👤</span>
               <span>{userName || 'Guest'}</span>
@@ -1064,9 +1068,10 @@ Return ONLY valid JSON: {"items": [{"description": "short item description", "ta
             </button>
             <button onClick={() => setShowAddForm(true)} className="bg-white text-indigo-600 px-4 py-2 rounded-xl font-semibold hover:bg-yellow-100 hover:text-indigo-700 transition-all flex items-center gap-2 shadow-md hover:shadow-lg hover:scale-105">
               <Plus className="w-5 h-5" />
-              Add Tote
+              New Tote
             </button>
           </div>
+          <p className="text-center text-white/70 text-xs mb-4">Tip: Search by description, brand, color, or tag.</p>
 
           <div className="flex gap-2">
             <div className="relative flex-1">
@@ -1345,6 +1350,10 @@ Return ONLY valid JSON: {"items": [{"description": "short item description", "ta
             </div>
 
             <div className="space-y-4">
+              <div>
+                <p className="text-sm font-semibold text-gray-700">Step 1: Add a photo</p>
+                <p className="text-xs text-gray-500">Use a clear shot so the AI can list items.</p>
+              </div>
               {/* Photo Button */}
               <button
                 onClick={() => fileInputRef.current?.click()}
@@ -1359,7 +1368,7 @@ Return ONLY valid JSON: {"items": [{"description": "short item description", "ta
                 ) : (
                   <>
                     <Camera className="w-6 h-6" />
-                    <span>{previewImage ? 'Retake Photo' : 'Take Photo of Items'}</span>
+                    <span>{previewImage ? 'Retake Photo' : 'Add Photo of Items'}</span>
                   </>
                 )}
               </button>
@@ -1384,6 +1393,7 @@ Return ONLY valid JSON: {"items": [{"description": "short item description", "ta
                     <span className="text-lg">🎉</span>
                     Found {analyzedItems.length} item{analyzedItems.length !== 1 ? 's' : ''}!
                   </h3>
+                  <p className="text-xs text-green-700 mb-2">Step 2: Review the list before saving.</p>
                   <div className="space-y-1 max-h-32 overflow-y-auto">
                     {analyzedItems.map((item, idx) => (
                       <p key={idx} className="text-sm text-green-700">• {item.description}</p>
@@ -1395,11 +1405,12 @@ Return ONLY valid JSON: {"items": [{"description": "short item description", "ta
               {/* Tote Details */}
               {analyzedItems.length > 0 && (
                 <>
+                  <p className="text-sm font-semibold text-gray-700">Step 3: Name it and pick a room</p>
                   <input
                     type="text"
                     value={currentTote}
                     onChange={(e) => setCurrentTote(e.target.value)}
-                    placeholder="Tote name (e.g., Tote #1, Christmas Box)"
+                    placeholder="Tote label (e.g., Tote 1, Holiday Lights)"
                     className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500"
                   />
 
@@ -1408,14 +1419,14 @@ Return ONLY valid JSON: {"items": [{"description": "short item description", "ta
                     onChange={(e) => setCurrentRoom(e.target.value)}
                     className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500"
                   >
-                    <option value="">Select room...</option>
+                    <option value="">Choose a room...</option>
                     {rooms.map(room => (
                       <option key={room.name} value={room.name}>{room.icon} {room.name}</option>
                     ))}
                   </select>
 
                   {rooms.length === 0 && (
-                    <p className="text-amber-600 text-sm">No rooms yet. <button onClick={() => { setShowAddForm(false); setShowRoomManager(true); }} className="underline font-medium">Add rooms first</button></p>
+                    <p className="text-amber-600 text-sm">No rooms yet. <button onClick={() => { setShowAddForm(false); setShowRoomManager(true); }} className="underline font-medium">Create a room</button> to continue.</p>
                   )}
 
                   <button
@@ -1690,20 +1701,20 @@ Return ONLY valid JSON: {"items": [{"description": "short item description", "ta
             {totes.length === 0 ? (
               <>
                 <div className="text-7xl mb-4 animate-pulse">🐐</div>
-                <p className="text-2xl font-bold text-gray-700 mb-2">No totes yet!</p>
-                <p className="text-gray-500 mb-6">This goat needs something to organize. Let's get started!</p>
+                <p className="text-2xl font-bold text-gray-700 mb-2">Start your first tote</p>
+                <p className="text-gray-500 mb-6">Create a room, snap a photo, and save your first set of items.</p>
                 <div className="flex justify-center gap-3">
                   <button
                     onClick={() => setShowRoomManager(true)}
                     className="px-6 py-3 bg-gradient-to-r from-gray-100 to-gray-200 text-gray-700 rounded-xl font-medium hover:from-gray-200 hover:to-gray-300 transition-all shadow-md"
                   >
-                    🏠 Add Rooms
+                    🏠 Create a Room
                   </button>
                   <button
                     onClick={() => setShowAddForm(true)}
                     className="px-6 py-3 bg-gradient-to-r from-indigo-500 to-purple-500 text-white rounded-xl font-medium hover:from-indigo-600 hover:to-purple-600 transition-all shadow-md hover:shadow-lg hover:scale-105"
                   >
-                    📦 Add First Tote
+                    📦 New Tote
                   </button>
                 </div>
               </>
@@ -1711,7 +1722,7 @@ Return ONLY valid JSON: {"items": [{"description": "short item description", "ta
               <>
                 <div className="text-5xl mb-4">🐐❓</div>
                 <p className="text-xl text-gray-500">Hmm, no results for "{searchQuery}"</p>
-                <p className="text-gray-400 mt-2">Try a different search term!</p>
+                <p className="text-gray-400 mt-2">Try fewer words or a tag like "red" or "tools".</p>
               </>
             )}
           </div>
