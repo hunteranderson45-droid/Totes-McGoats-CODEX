@@ -831,6 +831,12 @@ Return ONLY valid JSON: {"items": [{"description": "short item description", "ta
     setShowQuickRoom(false);
   };
 
+  useEffect(() => {
+    if (showAddForm && rooms.length === 0) {
+      setShowQuickRoom(true);
+    }
+  }, [showAddForm, rooms.length]);
+
   const closeAddItemModal = () => {
     setShowAddItemModal(false);
     setAddItemToteId(null);
@@ -1441,17 +1447,15 @@ Return ONLY valid JSON: {"items": [{"description": "short item description", "ta
                     <p className="text-amber-600 text-sm">No rooms yet. Create one below to continue.</p>
                   )}
 
-                  {rooms.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => setShowQuickRoom((prev) => !prev)}
-                      className="text-sm font-medium text-indigo-600 hover:text-indigo-700"
-                    >
-                      {showQuickRoom ? 'Hide quick room add' : 'Add a new room here'}
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => setShowQuickRoom((prev) => !prev)}
+                    className="text-sm font-medium text-indigo-600 hover:text-indigo-700"
+                  >
+                    {showQuickRoom ? 'Hide quick room add' : 'Add a new room here'}
+                  </button>
 
-                  {showQuickRoom || rooms.length === 0 ? (
+                  {showQuickRoom ? (
                     <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-4 space-y-3">
                       <div className="flex gap-2">
                         <button
