@@ -1274,8 +1274,10 @@ export default function ToteOrganizer() {
           <p className="text-center text-white/70 text-xs mb-4">Tip: Search by description, brand, color, or tag.</p>
           {(() => {
             const url = window.location.origin;
-            const isPreview = url.includes('-git-') || url.includes('--') || /vercel\.app$/.test(url) && url.split('.')[0].length > 20;
-            const isLocalhost = url.includes('localhost');
+            const hostname = window.location.hostname;
+            // Preview URLs contain '-git-' or have a random hash pattern before .vercel.app
+            const isPreview = hostname.includes('-git-') || /^.+-[a-z0-9]{8,}-[a-z0-9]+\.vercel\.app$/.test(hostname);
+            const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1';
 
             if (isLocalhost) {
               return (
