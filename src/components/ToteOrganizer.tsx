@@ -1205,6 +1205,7 @@ export default function ToteOrganizer() {
           <div className="flex items-center justify-center mb-2">
             <span className="text-3xl animate-bounce">🐐</span>
             <h1 className="text-2xl font-bold ml-2">Totes McGoats</h1>
+            <span className="ml-2 px-2 py-0.5 text-xs font-medium bg-white/20 rounded-full">v1.1</span>
           </div>
           <p className="text-center text-white/80 text-sm mb-4">
             Organize by room, search by item, and snap a photo to auto-catalog.
