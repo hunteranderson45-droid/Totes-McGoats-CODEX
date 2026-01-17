@@ -1,7 +1,10 @@
 import { useState, useRef, useEffect, useMemo, useCallback, memo } from 'react';
-import { Camera, Search, Package, Trash2, X, Plus, ChevronDown, Move, Settings, Edit2, Sparkles, Download, Upload, BarChart3, Moon, Sun, Check, Lock, Unlock } from 'lucide-react';
-import { storage } from '../lib/storage';
+import { Camera, Search, Package, Trash2, X, Plus, ChevronDown, Move, Settings, Edit2, Sparkles, Download, Upload, BarChart3, Moon, Sun, Check, Lock, Unlock, History, RotateCcw } from 'lucide-react';
+import { storage, type BackupEntry } from '../lib/storage';
 import { normalizeImportPayload, normalizeRooms, normalizeTote, type Item, type Room, type Tote } from '../lib/validation';
+import { createSearchIndex, fuzzySearch, highlightMatches } from '../lib/fuzzySearch';
+import { analyzeImage } from '../lib/imageAnalysis';
+import type Fuse from 'fuse.js';
 
 const DEFAULT_ROOM_ICON = '🏠';
 
@@ -67,7 +70,8 @@ const ToteCard = memo(function ToteCard({ tote, onClick }: ToteCardProps) {
   return (
     <button
       onClick={onClick}
-      className="bg-white rounded-2xl shadow-md overflow-hidden hover:shadow-xl hover:scale-[1.02] transition-all duration-200 text-left group"
+      aria-label={`Open ${tote.number} with ${tote.items.length} items`}
+      className="bg-white dark:bg-gray-800 rounded-2xl shadow-md overflow-hidden hover:shadow-xl hover:scale-[1.02] transition-all duration-200 text-left group focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:outline-none"
     >
       {tote.imageUrl ? (
         <div className="relative overflow-hidden">
@@ -311,6 +315,16 @@ export default function ToteOrganizer() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
 
+  // Search history and fuzzy search
+  const [searchHistory, setSearchHistory] = useState<string[]>([]);
+  const [showSearchHistory, setShowSearchHistory] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const [fuseIndex, setFuseIndex] = useState<Fuse<{ toteId: number; toteName: string; toteRoom: string; itemIndex: number; description: string; tags: string[]; tagString: string }> | null>(null);
+
+  // Backup state
+  const [backups, setBackups] = useState<BackupEntry[]>([]);
+  const [showBackupModal, setShowBackupModal] = useState(false);
+
   // Debounced search for better performance
   const debouncedSearchQuery = useDebounce(searchQuery, 150);
 
@@ -362,12 +376,54 @@ export default function ToteOrganizer() {
             console.log('Invalid rooms data found');
           }
         }
+
+        // Load search history
+        const history = await storage.getSearchHistory();
+        setSearchHistory(history);
+
+        // Load backups list
+        const backupList = await storage.getBackups();
+        setBackups(backupList);
       } catch {
         console.log('No saved data found');
       }
     };
     loadData();
   }, [accessGranted, userName]);
+
+  // Update fuzzy search index when totes change
+  useEffect(() => {
+    if (totes.length > 0) {
+      const index = createSearchIndex(totes);
+      setFuseIndex(index);
+    } else {
+      setFuseIndex(null);
+    }
+  }, [totes]);
+
+  // Auto-backup once per day
+  useEffect(() => {
+    if (!accessGranted || totes.length === 0) return;
+    const checkBackup = async () => {
+      const shouldBackup = await storage.shouldAutoBackup();
+      if (shouldBackup) {
+        await storage.createBackup(totes, rooms);
+        await storage.markAutoBackupDone();
+        const backupList = await storage.getBackups();
+        setBackups(backupList);
+      }
+    };
+    checkBackup();
+  }, [accessGranted, totes, rooms]);
+
+  // Save search to history when debounced query changes
+  useEffect(() => {
+    if (debouncedSearchQuery && debouncedSearchQuery.length >= 2) {
+      storage.addSearchHistory(debouncedSearchQuery).then(() => {
+        storage.getSearchHistory().then(setSearchHistory);
+      });
+    }
+  }, [debouncedSearchQuery]);
 
   useEffect(() => {
     if (!accessGranted) return;
@@ -458,137 +514,6 @@ export default function ToteOrganizer() {
     setEditRoomIcon('');
   }, [rooms, totes, saveRooms]);
 
-  const analyzeImage = async (imageData: string, mediaType: string): Promise<Item[]> => {
-    setAnalyzing(true);
-    try {
-      const apiKey = import.meta.env.VITE_ANTHROPIC_API_KEY;
-      if (!apiKey) {
-        alert('Please set VITE_ANTHROPIC_API_KEY in your .env file');
-        return [];
-      }
-
-      const callAnthropic = async (messages: Array<{ role: string; content: Array<{ type: string; text?: string; source?: { type: string; media_type: string; data: string } }> }>) => {
-        const response = await fetch("https://api.anthropic.com/v1/messages", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-api-key": apiKey,
-            "anthropic-version": "2023-06-01",
-            "anthropic-dangerous-direct-browser-access": "true",
-          },
-          body: JSON.stringify({
-            model: "claude-sonnet-4-20250514",
-            max_tokens: 4096,
-            messages,
-          })
-        });
-
-        const data = await response.json();
-        if (!response.ok) {
-          throw new Error(data.error?.message || JSON.stringify(data));
-        }
-        return data;
-      };
-
-      const extractJson = (data: unknown) => {
-        if (!data || typeof data !== 'object') {
-          throw new Error('Invalid response payload');
-        }
-        const content = Array.isArray((data as { content?: unknown }).content)
-          ? (data as { content: Array<{ type?: unknown; text?: unknown }> }).content
-          : [];
-        const textBlock = content.find(
-          (block) => block && typeof block === 'object' && (block as { type?: unknown }).type === 'text'
-        );
-        const textContent = typeof (textBlock as { text?: unknown })?.text === 'string'
-          ? (textBlock as { text: string }).text
-          : '';
-        const cleanedText = textContent.replace(/```json|```/g, '').trim();
-        return JSON.parse(cleanedText);
-      };
-
-      const firstData = await callAnthropic([
-        {
-          role: "user",
-          content: [
-            {
-              type: "image",
-              source: {
-                type: "base64",
-                media_type: mediaType,
-                data: imageData
-              }
-            },
-            {
-              type: "text",
-              text: `You are cataloging items for a home storage inventory system. Look at this image and identify EVERY distinct physical object/item. Ignore the background, floor, table, or surface they're on.
-
-Be precise and conservative:
-- If you are unsure, use a generic description (e.g., "black plastic container") rather than guessing a brand or model.
-- Do not invent text, brand names, or sizes that are not clearly visible.
-
-For each item, provide:
-1. A SHORT but SPECIFIC description (under 10 words) that someone would recognize, like:
-   - "Blue Nike running shoes size 10"
-   - "Black & Decker cordless drill"
-   - "Red KitchenAid stand mixer"
-   - "Box of assorted Christmas lights"
-   - "Infant car seat - Graco gray"
-
-2. MANY searchable tags (12-24) that someone might type when looking for this item later:
-   - Exact item name and synonyms (drill, power drill, cordless drill)
-   - Brand only if clearly visible
-   - Colors and patterns
-   - Category (tools, kitchen, baby, sports, holiday, electronics, clothing, toys, etc.)
-   - Material (plastic, metal, fabric, wood, glass)
-   - Size descriptors if clearly visible (small, large, infant, adult)
-   - Season/holiday if applicable (christmas, halloween, winter, summer)
-   - Room it might belong in (garage, kitchen, nursery, closet)
-   - Use or function (cooking, cleaning, storage, decoration)
-
-Self-check before finalizing:
-- Verify each item is distinct (not duplicates).
-- Replace any uncertain brand/model with a neutral description.
-- Ensure tags are relevant, non-redundant, and all lowercase.
-
-Return ONLY valid JSON: {"items": [{"description": "short item description", "tags": ["tag1", "tag2", "tag3", ...]}]}`
-            }
-          ]
-        }
-      ]);
-
-      const parsedFirst = extractJson(firstData);
-      const firstItems = parsedFirst.items || [];
-
-      try {
-        const reviewPayload = JSON.stringify({ items: firstItems });
-        const reviewData = await callAnthropic([
-          {
-            role: "user",
-            content: [
-              {
-                type: "text",
-                text: `Second pass: review this JSON for accuracy. Remove uncertain brands/sizes, deduplicate items and tags, and ensure tags are relevant and lowercase. Return ONLY valid JSON.\n\n${reviewPayload}`
-              }
-            ]
-          }
-        ]);
-
-        const parsedReview = extractJson(reviewData);
-        return parsedReview.items || firstItems;
-      } catch (error) {
-        console.error('Second pass failed, using first pass:', error);
-        return firstItems;
-      }
-    } catch (error) {
-      console.error('Error analyzing image:', error);
-      alert(`Error analyzing image: ${error instanceof Error ? error.message : String(error)}`);
-      return [];
-    } finally {
-      setAnalyzing(false);
-    }
-  };
-
   const handleImageUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -603,8 +528,16 @@ Return ONLY valid JSON: {"items": [{"description": "short item description", "ta
       const compressedImage = await compressImage(result);
       setPreviewImage(compressedImage);
 
-      const items = await analyzeImage(base64Data, mediaType);
-      setAnalyzedItems(items);
+      setAnalyzing(true);
+      try {
+        const items = await analyzeImage(base64Data, mediaType);
+        setAnalyzedItems(items);
+      } catch (error) {
+        console.error('Error analyzing image:', error);
+        alert(`Error analyzing image: ${error instanceof Error ? error.message : String(error)}`);
+      } finally {
+        setAnalyzing(false);
+      }
     };
     reader.readAsDataURL(file);
     e.target.value = '';
@@ -939,33 +872,46 @@ Return ONLY valid JSON: {"items": [{"description": "short item description", "ta
     return { totalTotes: totes.length, totalItems, topTags, itemsByRoom, totalRooms: rooms.length };
   }, [totes, rooms]);
 
-  // Memoized filter function
-  const getMatchingItems = useCallback((tote: Tote, searchTerms: string[]) => {
-    return tote.items.filter(item => {
-      const itemText = `${item.description} ${item.tags.join(' ')}`.toLowerCase();
-      return searchTerms.some(term => itemText.includes(term));
-    });
-  }, []);
-
-  // Memoized filtered totes - only recalculates when totes or debounced search changes
+  // Memoized filtered totes using fuzzy search - only recalculates when totes or debounced search changes
   const filteredTotes = useMemo(() => {
+    if (!debouncedSearchQuery) {
+      return totes.map(tote => ({ tote, matchingItems: [] as Item[], matchedTerms: [] as string[] }));
+    }
+
+    // Use fuzzy search if index is available
+    if (fuseIndex) {
+      return fuzzySearch(debouncedSearchQuery, totes, fuseIndex);
+    }
+
+    // Fallback to substring matching
+    const query = debouncedSearchQuery.toLowerCase();
+    const searchTerms = query.split(' ').filter(term => term.length > 0);
+
     return totes.map(tote => {
-      if (!debouncedSearchQuery) return { tote, matchingItems: [] as Item[] };
-
-      const query = debouncedSearchQuery.toLowerCase();
-      const searchTerms = query.split(' ').filter(term => term.length > 0);
-
       const toteMatches = tote.number.toLowerCase().includes(query) ||
                           tote.room?.toLowerCase().includes(query);
 
-      const matchingItems = getMatchingItems(tote, searchTerms);
+      const matchingItems = tote.items.filter(item => {
+        const itemText = `${item.description} ${item.tags.join(' ')}`.toLowerCase();
+        return searchTerms.some(term => itemText.includes(term));
+      });
 
       if (toteMatches || matchingItems.length > 0) {
-        return { tote, matchingItems };
+        return { tote, matchingItems, matchedTerms: searchTerms };
       }
       return null;
-    }).filter((result): result is { tote: Tote; matchingItems: Item[] } => result !== null);
-  }, [totes, debouncedSearchQuery, getMatchingItems]);
+    }).filter((result): result is { tote: Tote; matchingItems: Item[]; matchedTerms: string[] } => result !== null);
+  }, [totes, debouncedSearchQuery, fuseIndex]);
+
+  // Compute search result stats
+  const searchStats = useMemo(() => {
+    if (!debouncedSearchQuery) return null;
+    const totalMatchingItems = filteredTotes.reduce((sum, r) => sum + r.matchingItems.length, 0);
+    return {
+      toteCount: filteredTotes.length,
+      itemCount: totalMatchingItems,
+    };
+  }, [debouncedSearchQuery, filteredTotes]);
 
   // Memoized grouping by room with sorting
   const totesByRoom = useMemo(() => {
@@ -1011,9 +957,46 @@ Return ONLY valid JSON: {"items": [{"description": "short item description", "ta
     setMovingItem(null);
   };
 
+  // Restore from backup
+  const handleRestoreBackup = useCallback(async (timestamp: string) => {
+    if (!confirm('Restore from this backup? Current data will be replaced.')) return;
+
+    const backupData = await storage.restoreBackup(timestamp);
+    if (!backupData) {
+      alert('Failed to restore backup');
+      return;
+    }
+
+    // Clear existing data
+    const existingKeys = await storage.list('tote:');
+    for (const key of existingKeys.keys) {
+      await storage.delete(key);
+    }
+
+    // Restore totes
+    const restoredTotes: Tote[] = [];
+    for (const tote of backupData.totes as Tote[]) {
+      const normalized = normalizeTote(tote);
+      if (normalized) {
+        await storage.set(`tote:${normalized.id}`, JSON.stringify(normalized));
+        restoredTotes.push(normalized);
+      }
+    }
+    setTotes(restoredTotes);
+
+    // Restore rooms
+    const { rooms: normalizedRooms } = normalizeRooms(backupData.rooms, DEFAULT_ROOM_ICON);
+    await storage.set('rooms', JSON.stringify(normalizedRooms));
+    setRooms(normalizedRooms);
+
+    setShowBackupModal(false);
+    alert(`Restored ${restoredTotes.length} totes and ${normalizedRooms.length} rooms`);
+  }, []);
+
   const closeTopModal = useCallback(() => {
     if (showSetPin) return setShowSetPin(false);
     if (showDeployHelp) return setShowDeployHelp(false);
+    if (showBackupModal) return setShowBackupModal(false);
     if (showMoveModal) return closeMoveModal();
     if (showAddItemModal) return closeAddItemModal();
     if (selectedTote) return setSelectedTote(null);
@@ -1029,6 +1012,7 @@ Return ONLY valid JSON: {"items": [{"description": "short item description", "ta
     showStats,
     showRoomManager,
     showDeployHelp,
+    showBackupModal,
   ]);
 
   useEffect(() => {
@@ -1254,31 +1238,34 @@ Return ONLY valid JSON: {"items": [{"description": "short item description", "ta
             >
               Sign out
             </button>
-            <button onClick={() => setShowSetPin(true)} className="bg-white/20 hover:bg-white/30 p-2.5 rounded-xl transition-all" title={storedPin ? 'Change PIN' : 'Set PIN'}>
+            <button onClick={() => setShowSetPin(true)} className="bg-white/20 hover:bg-white/30 p-2.5 rounded-xl transition-all focus-visible:ring-2 focus-visible:ring-yellow-300 focus-visible:outline-none" title={storedPin ? 'Change PIN' : 'Set PIN'} aria-label={storedPin ? 'Change PIN' : 'Set PIN'}>
               {storedPin ? <Lock className="w-5 h-5" /> : <Unlock className="w-5 h-5" />}
             </button>
-            <button onClick={toggleDarkMode} className="bg-white/20 hover:bg-white/30 p-2.5 rounded-xl transition-all" title="Toggle Dark Mode">
+            <button onClick={toggleDarkMode} className="bg-white/20 hover:bg-white/30 p-2.5 rounded-xl transition-all focus-visible:ring-2 focus-visible:ring-yellow-300 focus-visible:outline-none" title="Toggle Dark Mode" aria-label={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}>
               {darkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
             </button>
-            <button onClick={() => setShowStats(true)} className="bg-white/20 hover:bg-white/30 p-2.5 rounded-xl transition-all" title="Statistics">
+            <button onClick={() => setShowStats(true)} className="bg-white/20 hover:bg-white/30 p-2.5 rounded-xl transition-all focus-visible:ring-2 focus-visible:ring-yellow-300 focus-visible:outline-none" title="Statistics" aria-label="View statistics">
               <BarChart3 className="w-5 h-5" />
             </button>
             {isDev && (
-              <button onClick={seedData} className="bg-white/20 hover:bg-white/30 p-2.5 rounded-xl transition-all" title="Seed data">
+              <button onClick={seedData} className="bg-white/20 hover:bg-white/30 p-2.5 rounded-xl transition-all focus-visible:ring-2 focus-visible:ring-yellow-300 focus-visible:outline-none" title="Seed data" aria-label="Seed test data">
                 <Sparkles className="w-5 h-5" />
               </button>
             )}
-            <button onClick={exportData} className="bg-white/20 hover:bg-white/30 p-2.5 rounded-xl transition-all" title="Export Data">
+            <button onClick={exportData} className="bg-white/20 hover:bg-white/30 p-2.5 rounded-xl transition-all focus-visible:ring-2 focus-visible:ring-yellow-300 focus-visible:outline-none" title="Export Data" aria-label="Export data">
               <Download className="w-5 h-5" />
             </button>
-            <button onClick={() => importInputRef.current?.click()} className="bg-white/20 hover:bg-white/30 p-2.5 rounded-xl transition-all" title="Import Data">
+            <button onClick={() => importInputRef.current?.click()} className="bg-white/20 hover:bg-white/30 p-2.5 rounded-xl transition-all focus-visible:ring-2 focus-visible:ring-yellow-300 focus-visible:outline-none" title="Import Data" aria-label="Import data">
               <Upload className="w-5 h-5" />
             </button>
-            <input ref={importInputRef} type="file" accept=".json" onChange={importData} className="hidden" />
-            <button onClick={() => setShowRoomManager(true)} className="bg-white/20 hover:bg-white/30 p-2.5 rounded-xl transition-all" title="Manage Rooms">
+            <input ref={importInputRef} type="file" accept=".json" onChange={importData} className="hidden" aria-hidden="true" />
+            <button onClick={() => setShowBackupModal(true)} className="bg-white/20 hover:bg-white/30 p-2.5 rounded-xl transition-all focus-visible:ring-2 focus-visible:ring-yellow-300 focus-visible:outline-none" title="Restore from Backup" aria-label="Restore from backup">
+              <RotateCcw className="w-5 h-5" />
+            </button>
+            <button onClick={() => setShowRoomManager(true)} className="bg-white/20 hover:bg-white/30 p-2.5 rounded-xl transition-all focus-visible:ring-2 focus-visible:ring-yellow-300 focus-visible:outline-none" title="Manage Rooms" aria-label="Manage rooms">
               <Settings className="w-5 h-5" />
             </button>
-            <button onClick={() => setShowAddForm(true)} className="bg-white text-indigo-600 px-4 py-2 rounded-xl font-semibold hover:bg-yellow-100 hover:text-indigo-700 transition-all flex items-center gap-2 shadow-md hover:shadow-lg hover:scale-105">
+            <button onClick={() => setShowAddForm(true)} className="bg-white text-indigo-600 px-4 py-2 rounded-xl font-semibold hover:bg-yellow-100 hover:text-indigo-700 transition-all flex items-center gap-2 shadow-md hover:shadow-lg hover:scale-105 focus-visible:ring-2 focus-visible:ring-yellow-300 focus-visible:outline-none" aria-label="Create new tote">
               <Plus className="w-5 h-5" />
               New Tote
             </button>
@@ -1288,27 +1275,64 @@ Return ONLY valid JSON: {"items": [{"description": "short item description", "ta
             Data stays only on this exact URL. Use your production/custom domain to keep totes.
           </div>
 
-          <div className="flex gap-2">
+          <div className="flex flex-col sm:flex-row gap-2">
             <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5 pointer-events-none" />
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5 pointer-events-none" aria-hidden="true" />
               <input
+                ref={searchInputRef}
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
+                onFocus={() => setShowSearchHistory(true)}
+                onBlur={() => setTimeout(() => setShowSearchHistory(false), 200)}
                 placeholder="What are you looking for? 🔍"
-                className={`w-full pl-10 pr-4 py-3 ${darkMode ? 'bg-gray-700 text-white placeholder-gray-400' : 'bg-white/95 text-gray-800 placeholder-gray-400'} border-0 rounded-xl focus:ring-2 focus:ring-yellow-300 shadow-inner`}
+                aria-label="Search totes and items"
+                className={`w-full pl-10 pr-10 py-3 ${darkMode ? 'bg-gray-700 text-white placeholder-gray-400' : 'bg-white/95 text-gray-800 placeholder-gray-400'} border-0 rounded-xl focus:ring-2 focus:ring-yellow-300 focus-visible:outline-none shadow-inner`}
               />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  aria-label="Clear search"
+                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+              {/* Search History Dropdown */}
+              {showSearchHistory && searchHistory.length > 0 && !searchQuery && (
+                <div className={`absolute top-full left-0 right-0 mt-1 ${darkMode ? 'bg-gray-700' : 'bg-white'} rounded-xl shadow-lg z-10 overflow-hidden`}>
+                  <div className={`px-3 py-2 text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'} flex items-center gap-1`}>
+                    <History className="w-3 h-3" /> Recent searches
+                  </div>
+                  {searchHistory.map((query, idx) => (
+                    <button
+                      key={idx}
+                      onMouseDown={() => setSearchQuery(query)}
+                      className={`w-full text-left px-3 py-2 text-sm ${darkMode ? 'hover:bg-gray-600 text-white' : 'hover:bg-gray-100 text-gray-700'}`}
+                    >
+                      {query}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
             <select
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value as 'name' | 'date' | 'items')}
-              className={`px-3 py-2 rounded-xl ${darkMode ? 'bg-gray-700 text-white' : 'bg-white/95 text-gray-800'} border-0 focus:ring-2 focus:ring-yellow-300`}
+              aria-label="Sort totes by"
+              className={`px-3 py-2 rounded-xl ${darkMode ? 'bg-gray-700 text-white' : 'bg-white/95 text-gray-800'} border-0 focus:ring-2 focus:ring-yellow-300 focus-visible:outline-none`}
             >
               <option value="name">A-Z</option>
               <option value="date">Newest</option>
               <option value="items">Most Items</option>
             </select>
           </div>
+          {/* Search Stats */}
+          {searchStats && (
+            <div className="mt-2 text-center text-white/80 text-sm" role="status" aria-live="polite">
+              Found {searchStats.itemCount} item{searchStats.itemCount !== 1 ? 's' : ''} in {searchStats.toteCount} tote{searchStats.toteCount !== 1 ? 's' : ''}
+            </div>
+          )}
         </div>
       </div>
 
@@ -1640,21 +1664,25 @@ Return ONLY valid JSON: {"items": [{"description": "short item description", "ta
         <div
           className="fixed inset-0 bg-black/50 z-30 flex items-end sm:items-center justify-center"
           onClick={closeAddForm}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="add-tote-title"
         >
           <div
-            className="bg-white w-full sm:max-w-lg sm:rounded-2xl rounded-t-2xl p-6 max-h-[90vh] overflow-y-auto"
+            className="bg-white w-full h-[90vh] sm:h-auto sm:max-w-lg sm:rounded-2xl rounded-t-2xl p-4 sm:p-6 overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex justify-between items-center mb-4">
               <div>
-                <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
+                <h2 id="add-tote-title" className="text-2xl font-bold text-gray-800 flex items-center gap-2">
                   <span>📦</span> Add New Tote
                 </h2>
                 <div className="text-xs text-gray-500">Esc to close</div>
               </div>
               <button
                 onClick={closeAddForm}
-                className="p-2 hover:bg-gray-100 rounded-full"
+                aria-label="Close modal"
+                className="p-2 hover:bg-gray-100 rounded-full focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:outline-none"
               >
                 <X className="w-6 h-6" />
               </button>
@@ -1807,9 +1835,12 @@ Return ONLY valid JSON: {"items": [{"description": "short item description", "ta
         <div
           className="fixed inset-0 bg-black/50 z-30 flex items-end sm:items-center justify-center"
           onClick={() => setSelectedTote(null)}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="tote-detail-title"
         >
           <div
-            className="bg-white w-full sm:max-w-2xl sm:rounded-2xl rounded-t-2xl max-h-[90vh] overflow-y-auto"
+            className="bg-white w-full h-[90vh] sm:h-auto sm:max-w-2xl sm:rounded-2xl rounded-t-2xl overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Tote Image Header */}
@@ -1818,7 +1849,8 @@ Return ONLY valid JSON: {"items": [{"description": "short item description", "ta
                 <img src={selectedTote.imageUrl} alt={selectedTote.number} className="w-full h-48 object-cover" />
                 <button
                   onClick={() => setSelectedTote(null)}
-                  className="absolute top-3 right-3 bg-black/50 text-white p-2 rounded-full hover:bg-black/70"
+                  aria-label="Close modal"
+                  className="absolute top-3 right-3 bg-black/50 text-white p-2 rounded-full hover:bg-black/70 focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -1837,7 +1869,7 @@ Return ONLY valid JSON: {"items": [{"description": "short item description", "ta
 
             <div className="flex items-start justify-between mb-4">
               <div>
-                <h2 className="text-2xl font-bold text-gray-800">{selectedTote.number}</h2>
+                <h2 id="tote-detail-title" className="text-2xl font-bold text-gray-800">{selectedTote.number}</h2>
                 <div className="text-xs text-gray-500">Esc to close</div>
                 <div className="flex items-center gap-2 mt-1">
                   <span className="text-lg">{getRoomIcon(selectedTote.room)}</span>
@@ -2053,8 +2085,67 @@ Return ONLY valid JSON: {"items": [{"description": "short item description", "ta
         </div>
       )}
 
+      {/* Backup Modal */}
+      {showBackupModal && (
+        <div
+          className="fixed inset-0 bg-black/50 z-30 flex items-center justify-center p-4"
+          onClick={() => setShowBackupModal(false)}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="backup-modal-title"
+        >
+          <div
+            className={`${darkMode ? 'bg-gray-800 text-white' : 'bg-white text-gray-800'} w-full max-w-md rounded-2xl p-6 max-h-[80vh] overflow-y-auto`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex justify-between items-center mb-6">
+              <div>
+                <h2 id="backup-modal-title" className="text-xl font-bold flex items-center gap-2">
+                  <RotateCcw className="w-5 h-5" /> Restore from Backup
+                </h2>
+                <div className={`text-xs ${darkMode ? 'text-gray-300' : 'text-gray-500'}`}>Esc to close</div>
+              </div>
+              <button
+                onClick={() => setShowBackupModal(false)}
+                aria-label="Close backup modal"
+                className={`p-2 rounded-full ${darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'} focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:outline-none`}
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            {backups.length === 0 ? (
+              <p className={`text-center py-8 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                No backups available yet. Backups are created automatically once per day.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'} mb-4`}>
+                  Select a backup to restore. This will replace your current data.
+                </p>
+                {backups.map((backup) => (
+                  <button
+                    key={backup.timestamp}
+                    onClick={() => handleRestoreBackup(backup.timestamp)}
+                    className={`w-full text-left p-4 rounded-xl ${darkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-50 hover:bg-gray-100'} transition-colors focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:outline-none`}
+                  >
+                    <div className="font-medium">
+                      {new Date(backup.timestamp).toLocaleDateString()} at{' '}
+                      {new Date(backup.timestamp).toLocaleTimeString()}
+                    </div>
+                    <div className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                      {backup.toteCount} totes, {backup.roomCount} rooms
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Main Content - Grid of Totes */}
-      <div className="p-4">
+      <div className="px-2 py-4 sm:px-4">
         {filteredTotes.length === 0 ? (
           <div className="text-center py-16">
             {totes.length === 0 ? (
@@ -2081,7 +2172,13 @@ Return ONLY valid JSON: {"items": [{"description": "short item description", "ta
               <>
                 <div className="text-5xl mb-4">🐐❓</div>
                 <p className="text-xl text-gray-500">Hmm, no results for "{searchQuery}"</p>
-                <p className="text-gray-400 mt-2">Try fewer words or a tag like "red" or "tools".</p>
+                <p className="text-gray-400 mt-2">Try fewer words, a typo-tolerant search, or a tag like "red" or "tools".</p>
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="mt-4 px-4 py-2 bg-indigo-100 text-indigo-700 rounded-xl font-medium hover:bg-indigo-200 transition-colors focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:outline-none"
+                >
+                  Clear search
+                </button>
               </>
             )}
           </div>
@@ -2121,7 +2218,15 @@ Return ONLY valid JSON: {"items": [{"description": "short item description", "ta
                     <div className="space-y-2">
                       {matchingItems.map((item, idx) => (
                         <div key={idx} className="bg-white rounded-lg p-3 border border-yellow-200">
-                          <p className="font-medium text-gray-800 text-sm">{item.description}</p>
+                          <p className="font-medium text-gray-800 text-sm">
+                            {highlightMatches(item.description, debouncedSearchQuery).map((segment, segIdx) => (
+                              segment.highlighted ? (
+                                <mark key={segIdx} className="bg-yellow-200 text-gray-800 rounded px-0.5">{segment.text}</mark>
+                              ) : (
+                                <span key={segIdx}>{segment.text}</span>
+                              )
+                            ))}
+                          </p>
                           <div className="flex flex-wrap gap-1 mt-1">
                             {item.tags.slice(0, 5).map((tag, tagIdx) => (
                               <span key={tagIdx} className="px-2 py-0.5 bg-indigo-100 text-indigo-700 text-xs rounded-full">
@@ -2151,7 +2256,7 @@ Return ONLY valid JSON: {"items": [{"description": "short item description", "ta
                   <span className="text-gray-400">({roomResults.length})</span>
                 </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                <div className="grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
                   {roomResults.map(({ tote }) => (
                     <ToteCard
                       key={tote.id}
