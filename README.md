@@ -24,13 +24,20 @@ Set `VITE_ANTHROPIC_API_KEY` in `.env`. If you want a simple shared gate, also s
 npm run dev
 ```
 
+## Dev vs Deploy
+
+- Local dev uses `.env` on your machine.
+- Deployed builds use Vercel Environment Variables.
+- Workflow: make changes locally → `git push` to `main` → Vercel auto-deploys.
+- To sanity-check a production build locally: `npm run build`.
+
 ## Deploy (Vercel)
 
 1. Push this repo to GitHub.
 2. Create a new Vercel project from the repo.
 3. Set `VITE_ANTHROPIC_API_KEY` as an environment variable in Vercel.
 4. (Optional) Set `VITE_ACCESS_CODE` for a shared access gate.
-4. Deploy. The default Vite build works out of the box.
+5. Deploy. The default Vite build works out of the box.
 
 ## Notes
 
