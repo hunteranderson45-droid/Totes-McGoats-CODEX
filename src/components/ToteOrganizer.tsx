@@ -252,6 +252,7 @@ export default function ToteOrganizer() {
   const [editItemTags, setEditItemTags] = useState('');
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
   const [bulkMode, setBulkMode] = useState(false);
+  const [showQuickRoom, setShowQuickRoom] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
 
@@ -352,6 +353,16 @@ export default function ToteOrganizer() {
     await saveRooms([...rooms, { name: newRoomName.trim(), icon: newRoomIcon }]);
     setNewRoomName('');
     setNewRoomIcon('🏠');
+  }, [newRoomName, newRoomIcon, rooms, saveRooms]);
+
+  const addRoomAndSelect = useCallback(async () => {
+    const roomName = newRoomName.trim();
+    if (!roomName || rooms.some(r => r.name === roomName)) return;
+    await saveRooms([...rooms, { name: roomName, icon: newRoomIcon }]);
+    setNewRoomName('');
+    setNewRoomIcon('🏠');
+    setCurrentRoom(roomName);
+    setShowQuickRoom(false);
   }, [newRoomName, newRoomIcon, rooms, saveRooms]);
 
   const deleteRoom = useCallback(async (roomToDelete: string) => {
@@ -817,6 +828,7 @@ Return ONLY valid JSON: {"items": [{"description": "short item description", "ta
     setCurrentTote('');
     setCurrentRoom('');
     setAnalyzedItems([]);
+    setShowQuickRoom(false);
   };
 
   const closeAddItemModal = () => {
@@ -1426,8 +1438,58 @@ Return ONLY valid JSON: {"items": [{"description": "short item description", "ta
                   </select>
 
                   {rooms.length === 0 && (
-                    <p className="text-amber-600 text-sm">No rooms yet. <button onClick={() => { setShowAddForm(false); setShowRoomManager(true); }} className="underline font-medium">Create a room</button> to continue.</p>
+                    <p className="text-amber-600 text-sm">No rooms yet. Create one below to continue.</p>
                   )}
+
+                  {rooms.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setShowQuickRoom((prev) => !prev)}
+                      className="text-sm font-medium text-indigo-600 hover:text-indigo-700"
+                    >
+                      {showQuickRoom ? 'Hide quick room add' : 'Add a new room here'}
+                    </button>
+                  )}
+
+                  {showQuickRoom || rooms.length === 0 ? (
+                    <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-4 space-y-3">
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          className="px-3 py-2 text-xl border border-indigo-200 rounded-lg bg-white"
+                        >
+                          {newRoomIcon}
+                        </button>
+                        <input
+                          type="text"
+                          value={newRoomName}
+                          onChange={(e) => setNewRoomName(e.target.value)}
+                          placeholder="Room name (e.g., Garage, Closet)"
+                          className="flex-1 px-3 py-2 border border-indigo-200 rounded-lg bg-white"
+                          onKeyDown={(e) => e.key === 'Enter' && addRoomAndSelect()}
+                        />
+                        <button
+                          onClick={addRoomAndSelect}
+                          disabled={!newRoomName.trim()}
+                          className="px-4 py-2 bg-indigo-600 text-white rounded-lg font-semibold disabled:bg-indigo-300"
+                        >
+                          Add
+                        </button>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {ROOM_ICONS.map(icon => (
+                          <button
+                            key={icon}
+                            type="button"
+                            onClick={() => setNewRoomIcon(icon)}
+                            className={`w-8 h-8 text-sm rounded-lg transition-all ${newRoomIcon === icon ? 'bg-white ring-2 ring-indigo-500 scale-110' : 'hover:bg-white'}`}
+                          >
+                            {icon}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
 
                   <button
                     onClick={saveTote}
