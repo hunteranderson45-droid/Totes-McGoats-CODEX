@@ -247,6 +247,7 @@ export default function ToteOrganizer() {
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem('darkMode') === 'true');
   const [sortBy, setSortBy] = useState<'name' | 'date' | 'items'>('name');
   const [showStats, setShowStats] = useState(false);
+  const [showDeployHelp, setShowDeployHelp] = useState(false);
   const [editingItem, setEditingItem] = useState<{ toteId: number; itemIndex: number } | null>(null);
   const [editItemDescription, setEditItemDescription] = useState('');
   const [editItemTags, setEditItemTags] = useState('');
@@ -884,6 +885,7 @@ Return ONLY valid JSON: {"items": [{"description": "short item description", "ta
 
   const closeTopModal = useCallback(() => {
     if (showSetPin) return setShowSetPin(false);
+    if (showDeployHelp) return setShowDeployHelp(false);
     if (showMoveModal) return closeMoveModal();
     if (showAddItemModal) return closeAddItemModal();
     if (selectedTote) return setSelectedTote(null);
@@ -898,6 +900,7 @@ Return ONLY valid JSON: {"items": [{"description": "short item description", "ta
     showAddForm,
     showStats,
     showRoomManager,
+    showDeployHelp,
   ]);
 
   useEffect(() => {
@@ -1086,6 +1089,12 @@ Return ONLY valid JSON: {"items": [{"description": "short item description", "ta
           <p className="text-center text-white/80 text-sm mb-4">
             Organize by room, search by item, and snap a photo to auto-catalog.
           </p>
+          <button
+            onClick={() => setShowDeployHelp(true)}
+            className="mx-auto mb-3 flex items-center gap-2 rounded-full border border-white/30 bg-white/10 px-4 py-1.5 text-xs font-medium text-white/90 hover:bg-white/20"
+          >
+            How do I update the live app?
+          </button>
           <div className="flex flex-wrap justify-center gap-2 mb-3">
             <div className="bg-white/15 px-3 py-2 rounded-xl text-sm font-medium flex items-center gap-2">
               <span>👤</span>
@@ -1369,6 +1378,49 @@ Return ONLY valid JSON: {"items": [{"description": "short item description", "ta
                     {tag} ({count})
                   </span>
                 ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Deploy Help Modal */}
+      {showDeployHelp && (
+        <div
+          className="fixed inset-0 bg-black/50 z-30 flex items-center justify-center p-4"
+          onClick={() => setShowDeployHelp(false)}
+        >
+          <div
+            className={`${darkMode ? 'bg-gray-800 text-white' : 'bg-white text-gray-800'} w-full max-w-md rounded-2xl p-6 max-h-[80vh] overflow-y-auto`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex justify-between items-center mb-6">
+              <div>
+                <h2 className="text-2xl font-bold flex items-center gap-2">
+                  🚀 Update the Live App
+                </h2>
+                <div className={`text-xs ${darkMode ? 'text-gray-300' : 'text-gray-500'}`}>Esc to close</div>
+              </div>
+              <button onClick={() => setShowDeployHelp(false)} className={`p-2 ${darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'} rounded-full`}>
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="space-y-4 text-sm">
+              <div className={`${darkMode ? 'bg-gray-700' : 'bg-gray-50'} rounded-xl p-4`}>
+                <p className="font-semibold mb-2">Local Dev</p>
+                <p>1) Update code locally</p>
+                <p>2) Run <span className="font-mono">npm run dev</span></p>
+              </div>
+              <div className={`${darkMode ? 'bg-gray-700' : 'bg-gray-50'} rounded-xl p-4`}>
+                <p className="font-semibold mb-2">Deploy Update</p>
+                <p>1) <span className="font-mono">git add .</span></p>
+                <p>2) <span className="font-mono">git commit -m "message"</span></p>
+                <p>3) <span className="font-mono">git push</span></p>
+                <p>4) Vercel auto-deploys from <span className="font-mono">main</span></p>
+              </div>
+              <div className={`${darkMode ? 'bg-gray-700' : 'bg-gray-50'} rounded-xl p-4`}>
+                <p className="font-semibold mb-2">Env Vars</p>
+                <p>Set keys in Vercel → Settings → Environment Variables.</p>
               </div>
             </div>
           </div>
