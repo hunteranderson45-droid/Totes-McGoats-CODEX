@@ -124,6 +124,9 @@ export default function ToteOrganizer() {
   const [loginUserName, setLoginUserName] = useState('');
   const [loginAccessCode, setLoginAccessCode] = useState('');
   const [rememberMe, setRememberMe] = useState(true);
+  const [setPinOnLogin, setSetPinOnLogin] = useState(false);
+  const [loginPin, setLoginPin] = useState('');
+  const [loginPinConfirm, setLoginPinConfirm] = useState('');
 
   // Security: PIN lock
   const [isLocked, setIsLocked] = useState(() => !!localStorage.getItem('appPin'));
@@ -143,6 +146,17 @@ export default function ToteOrganizer() {
       alert('Incorrect access code');
       return;
     }
+    if (setPinOnLogin) {
+      if (loginPin.length < 4) {
+        alert('PIN must be at least 4 digits');
+        return;
+      }
+      if (loginPin !== loginPinConfirm) {
+        alert('PINs do not match');
+        return;
+      }
+      localStorage.setItem('appPin', loginPin);
+    }
     const payload = JSON.stringify({ userName: loginUserName.trim(), ts: Date.now() });
     if (rememberMe) {
       localStorage.setItem('accessSession', payload);
@@ -155,7 +169,10 @@ export default function ToteOrganizer() {
     setAccessGranted(true);
     setLoginUserName('');
     setLoginAccessCode('');
-  }, [loginUserName, loginAccessCode, rememberMe, accessCode]);
+    setLoginPin('');
+    setLoginPinConfirm('');
+    setSetPinOnLogin(false);
+  }, [loginUserName, loginAccessCode, rememberMe, accessCode, setPinOnLogin, loginPin, loginPinConfirm]);
 
   const logout = useCallback(() => {
     localStorage.removeItem('accessSession');
@@ -866,6 +883,37 @@ Return ONLY valid JSON: {"items": [{"description": "short item description", "ta
                 placeholder="Access code"
                 className="w-full px-4 py-3 border border-gray-300 rounded-xl text-center text-lg"
               />
+            )}
+            <label className="flex items-center justify-center gap-2 text-sm text-gray-600">
+              <input
+                type="checkbox"
+                checked={setPinOnLogin}
+                onChange={(e) => setSetPinOnLogin(e.target.checked)}
+                className="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+              />
+              Set a PIN now
+            </label>
+            {setPinOnLogin && (
+              <div className="space-y-3">
+                <input
+                  type="password"
+                  inputMode="numeric"
+                  value={loginPin}
+                  onChange={(e) => setLoginPin(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && completeLogin()}
+                  placeholder="Create PIN (min 4 digits)"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl text-center text-lg tracking-widest"
+                />
+                <input
+                  type="password"
+                  inputMode="numeric"
+                  value={loginPinConfirm}
+                  onChange={(e) => setLoginPinConfirm(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && completeLogin()}
+                  placeholder="Confirm PIN"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl text-center text-lg tracking-widest"
+                />
+              </div>
             )}
             <label className="flex items-center justify-center gap-2 text-sm text-gray-600">
               <input
