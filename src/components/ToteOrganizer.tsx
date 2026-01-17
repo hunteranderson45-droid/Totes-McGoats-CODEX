@@ -405,32 +405,50 @@ export default function ToteOrganizer() {
         return [];
       }
 
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": apiKey,
-          "anthropic-version": "2023-06-01",
-          "anthropic-dangerous-direct-browser-access": "true",
-        },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 4096,
-          messages: [
+      const callAnthropic = async (messages: Array<{ role: string; content: Array<{ type: string; text?: string; source?: { type: string; media_type: string; data: string } }> }>) => {
+        const response = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": apiKey,
+            "anthropic-version": "2023-06-01",
+            "anthropic-dangerous-direct-browser-access": "true",
+          },
+          body: JSON.stringify({
+            model: "claude-sonnet-4-20250514",
+            max_tokens: 4096,
+            messages,
+          })
+        });
+
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.error?.message || JSON.stringify(data));
+        }
+        return data;
+      };
+
+      const extractJson = (data: any) => {
+        const textContent = data.content?.find((block: { type: string }) => block.type === 'text')?.text || '';
+        const cleanedText = textContent.replace(/```json|```/g, '').trim();
+        return JSON.parse(cleanedText);
+      };
+
+      const firstData = await callAnthropic([
+        {
+          role: "user",
+          content: [
             {
-              role: "user",
-              content: [
-                {
-                  type: "image",
-                  source: {
-                    type: "base64",
-                    media_type: mediaType,
-                    data: imageData
-                  }
-                },
-                {
-                  type: "text",
-                  text: `You are cataloging items for a home storage inventory system. Look at this image and identify EVERY distinct physical object/item. Ignore the background, floor, table, or surface they're on.
+              type: "image",
+              source: {
+                type: "base64",
+                media_type: mediaType,
+                data: imageData
+              }
+            },
+            {
+              type: "text",
+              text: `You are cataloging items for a home storage inventory system. Look at this image and identify EVERY distinct physical object/item. Ignore the background, floor, table, or surface they're on.
 
 Be precise and conservative:
 - If you are unsure, use a generic description (e.g., "black plastic container") rather than guessing a brand or model.
@@ -461,26 +479,34 @@ Self-check before finalizing:
 - Ensure tags are relevant, non-redundant, and all lowercase.
 
 Return ONLY valid JSON: {"items": [{"description": "short item description", "tags": ["tag1", "tag2", "tag3", ...]}]}`
-                }
-              ]
             }
           ]
-        })
-      });
+        }
+      ]);
 
-      const data = await response.json();
+      const parsedFirst = extractJson(firstData);
+      const firstItems = parsedFirst.items || [];
 
-      if (!response.ok) {
-        console.error('API Error:', data);
-        alert(`API Error: ${data.error?.message || JSON.stringify(data)}`);
-        return [];
+      try {
+        const reviewPayload = JSON.stringify({ items: firstItems });
+        const reviewData = await callAnthropic([
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: `Second pass: review this JSON for accuracy. Remove uncertain brands/sizes, deduplicate items and tags, and ensure tags are relevant and lowercase. Return ONLY valid JSON.\n\n${reviewPayload}`
+              }
+            ]
+          }
+        ]);
+
+        const parsedReview = extractJson(reviewData);
+        return parsedReview.items || firstItems;
+      } catch (error) {
+        console.error('Second pass failed, using first pass:', error);
+        return firstItems;
       }
-
-      const textContent = data.content?.find((block: { type: string }) => block.type === 'text')?.text || '';
-      const cleanedText = textContent.replace(/```json|```/g, '').trim();
-      const parsed = JSON.parse(cleanedText);
-
-      return parsed.items || [];
     } catch (error) {
       console.error('Error analyzing image:', error);
       alert(`Error analyzing image: ${error instanceof Error ? error.message : String(error)}`);
