@@ -1,11 +1,17 @@
 import { useState, useRef, useEffect, useMemo, useCallback, memo } from 'react';
 import { Camera, Search, Package, Trash2, X, Plus, ChevronDown, Move, Settings, Edit2, Sparkles, Download, Upload, BarChart3, Moon, Sun, Check, Lock, Unlock } from 'lucide-react';
 import { storage } from '../lib/storage';
+import { normalizeImportPayload, normalizeRooms, normalizeTote, type Item, type Room, type Tote } from '../lib/validation';
+
+const DEFAULT_ROOM_ICON = '🏠';
 
 // Fun room icons to choose from
 const ROOM_ICONS = [
   '🏠', '🛋️', '🛏️', '🍳', '🚿', '🚗', '🧺', '👶', '🎮', '📚',
-  '🏋️', '🌿', '🎄', '📦', '🧰', '👔', '🎨', '🎵', '🐕', '❄️'
+  '🏋️', '🌿', '🎄', '📦', '🧰', '👔', '🎨', '🎵', '🐕', '❄️',
+  '🗄️', '🚪', '🧹', '🧊', '🥫', '🧳', '🧱', '🪜', '🪣', '🛠️',
+  '📁', '🗃️', '🧼', '🧯', '🧥', '🏚️', '🗂️', '🚽', '🧴', '🪴',
+  '🔧', '🗝️'
 ];
 
 // Debounce hook for search
@@ -43,25 +49,6 @@ async function compressImage(base64: string, maxWidth = 800, quality = 0.7): Pro
     };
     img.src = base64;
   });
-}
-
-interface Room {
-  name: string;
-  icon: string;
-}
-
-interface Item {
-  description: string;
-  tags: string[];
-}
-
-interface Tote {
-  id: number;
-  number: string;
-  room: string;
-  items: Item[];
-  imageUrl?: string;
-  date: string;
 }
 
 interface MovingItem {
@@ -134,6 +121,9 @@ export default function ToteOrganizer() {
   const [showSetPin, setShowSetPin] = useState(false);
   const [newPin, setNewPin] = useState('');
   const [confirmPin, setConfirmPin] = useState('');
+  const [showRenameUser, setShowRenameUser] = useState(false);
+  const [renameUserValue, setRenameUserValue] = useState('');
+  const [renameDeleteOld, setRenameDeleteOld] = useState(true);
 
   const storedPin = localStorage.getItem('appPin');
 
@@ -222,12 +212,75 @@ export default function ToteOrganizer() {
     }
   }, []);
 
+  const renameUser = useCallback(async () => {
+    const nextUser = renameUserValue.trim();
+    if (!nextUser) {
+      alert('Please enter a new username');
+      return;
+    }
+    if (nextUser === userName) {
+      alert('That is already your username');
+      return;
+    }
+
+    const oldUser = userName;
+    storage.setNamespace(oldUser);
+
+    const keys = await storage.list('tote:');
+    const toteEntries = await Promise.all(
+      keys.keys.map(async (key) => {
+        const result = await storage.get(key);
+        return result ? { key, value: result.value } : null;
+      })
+    );
+    const roomsEntry = await storage.get('rooms');
+    const draftEntry = await storage.get('draft:new-tote');
+
+    storage.setNamespace(nextUser);
+
+    for (const entry of toteEntries) {
+      if (entry) {
+        await storage.set(entry.key, entry.value);
+      }
+    }
+    if (roomsEntry) {
+      await storage.set('rooms', roomsEntry.value);
+    }
+    if (draftEntry) {
+      await storage.set('draft:new-tote', draftEntry.value);
+    }
+
+    if (renameDeleteOld) {
+      storage.setNamespace(oldUser);
+      for (const key of keys.keys) {
+        await storage.delete(key);
+      }
+      await storage.delete('rooms');
+      await storage.delete('draft:new-tote');
+      storage.setNamespace(nextUser);
+    }
+
+    const payload = JSON.stringify({ userName: nextUser, ts: Date.now() });
+    if (localStorage.getItem('accessSession')) {
+      localStorage.setItem('accessSession', payload);
+    }
+    if (sessionStorage.getItem('accessSession')) {
+      sessionStorage.setItem('accessSession', payload);
+    }
+
+    setUserName(nextUser);
+    setRenameUserValue('');
+    setRenameDeleteOld(true);
+    setShowRenameUser(false);
+    alert(`Username updated to "${nextUser}".`);
+  }, [renameUserValue, userName, renameDeleteOld]);
+
   const [totes, setTotes] = useState<Tote[]>([]);
   const [rooms, setRooms] = useState<Room[]>([]);
   const [currentTote, setCurrentTote] = useState('');
   const [currentRoom, setCurrentRoom] = useState('');
   const [newRoomName, setNewRoomName] = useState('');
-  const [newRoomIcon, setNewRoomIcon] = useState('🏠');
+  const [newRoomIcon, setNewRoomIcon] = useState(DEFAULT_ROOM_ICON);
   const [searchQuery, setSearchQuery] = useState('');
   const [analyzing, setAnalyzing] = useState(false);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
@@ -254,6 +307,7 @@ export default function ToteOrganizer() {
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
   const [bulkMode, setBulkMode] = useState(false);
   const [showQuickRoom, setShowQuickRoom] = useState(false);
+  const isDev = import.meta.env.DEV;
   const fileInputRef = useRef<HTMLInputElement>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
 
@@ -283,22 +337,29 @@ export default function ToteOrganizer() {
           const loadedTotes = await Promise.all(
             keys.keys.map(async (key) => {
               const result = await storage.get(key);
-              return result ? JSON.parse(result.value) : null;
+              if (!result) return null;
+              try {
+                const parsed = JSON.parse(result.value);
+                return normalizeTote(parsed);
+              } catch {
+                return null;
+              }
             })
           );
-          setTotes(loadedTotes.filter(Boolean));
+          setTotes(loadedTotes.filter((tote): tote is Tote => tote !== null));
         }
 
         const roomsResult = await storage.get('rooms');
         if (roomsResult) {
-          const parsed = JSON.parse(roomsResult.value);
-          // Handle migration from old string[] format to new Room[] format
-          if (parsed.length > 0 && typeof parsed[0] === 'string') {
-            const migratedRooms: Room[] = parsed.map((name: string) => ({ name, icon: '🏠' }));
-            setRooms(migratedRooms);
-            await storage.set('rooms', JSON.stringify(migratedRooms));
-          } else {
-            setRooms(parsed);
+          try {
+            const parsed = JSON.parse(roomsResult.value);
+            const { rooms: normalizedRooms, migrated } = normalizeRooms(parsed, DEFAULT_ROOM_ICON);
+            setRooms(normalizedRooms);
+            if (migrated) {
+              await storage.set('rooms', JSON.stringify(normalizedRooms));
+            }
+          } catch {
+            console.log('Invalid rooms data found');
           }
         }
       } catch {
@@ -353,7 +414,7 @@ export default function ToteOrganizer() {
     if (!newRoomName.trim() || rooms.some(r => r.name === newRoomName.trim())) return;
     await saveRooms([...rooms, { name: newRoomName.trim(), icon: newRoomIcon }]);
     setNewRoomName('');
-    setNewRoomIcon('🏠');
+    setNewRoomIcon(DEFAULT_ROOM_ICON);
   }, [newRoomName, newRoomIcon, rooms, saveRooms]);
 
   const addRoomAndSelect = useCallback(async () => {
@@ -361,7 +422,7 @@ export default function ToteOrganizer() {
     if (!roomName || rooms.some(r => r.name === roomName)) return;
     await saveRooms([...rooms, { name: roomName, icon: newRoomIcon }]);
     setNewRoomName('');
-    setNewRoomIcon('🏠');
+    setNewRoomIcon(DEFAULT_ROOM_ICON);
     setCurrentRoom(roomName);
     setShowQuickRoom(false);
   }, [newRoomName, newRoomIcon, rooms, saveRooms]);
@@ -429,8 +490,19 @@ export default function ToteOrganizer() {
         return data;
       };
 
-      const extractJson = (data: any) => {
-        const textContent = data.content?.find((block: { type: string }) => block.type === 'text')?.text || '';
+      const extractJson = (data: unknown) => {
+        if (!data || typeof data !== 'object') {
+          throw new Error('Invalid response payload');
+        }
+        const content = Array.isArray((data as { content?: unknown }).content)
+          ? (data as { content: Array<{ type?: unknown; text?: unknown }> }).content
+          : [];
+        const textBlock = content.find(
+          (block) => block && typeof block === 'object' && (block as { type?: unknown }).type === 'text'
+        );
+        const textContent = typeof (textBlock as { text?: unknown })?.text === 'string'
+          ? (textBlock as { text: string }).text
+          : '';
         const cleanedText = textContent.replace(/```json|```/g, '').trim();
         return JSON.parse(cleanedText);
       };
@@ -698,25 +770,81 @@ Return ONLY valid JSON: {"items": [{"description": "short item description", "ta
     try {
       const text = await file.text();
       const data = JSON.parse(text);
+      const { totes: importedTotes, rooms: importedRooms, warnings } = normalizeImportPayload(
+        data,
+        DEFAULT_ROOM_ICON
+      );
 
-      if (data.totes && Array.isArray(data.totes)) {
-        for (const tote of data.totes) {
+      if (importedTotes.length === 0 && importedRooms.length === 0) {
+        alert('No valid data found in the import file.');
+        e.target.value = '';
+        return;
+      }
+
+      if (importedTotes.length > 0) {
+        for (const tote of importedTotes) {
           await storage.set(`tote:${tote.id}`, JSON.stringify(tote));
         }
-        setTotes(data.totes);
+        setTotes(importedTotes);
       }
 
-      if (data.rooms && Array.isArray(data.rooms)) {
-        await storage.set('rooms', JSON.stringify(data.rooms));
-        setRooms(data.rooms);
+      if (importedRooms.length > 0) {
+        await storage.set('rooms', JSON.stringify(importedRooms));
+        setRooms(importedRooms);
       }
 
-      alert(`Imported ${data.totes?.length || 0} totes and ${data.rooms?.length || 0} rooms!`);
+      const baseMessage = `Imported ${importedTotes.length} tote(s) and ${importedRooms.length} room(s).`;
+      const warningMessage = warnings.length > 0 ? `\n\nNotes:\n- ${warnings.join('\n- ')}` : '';
+      alert(`${baseMessage}${warningMessage}`);
     } catch {
       alert('Error importing data. Please check the file format.');
     }
     e.target.value = '';
   }, []);
+
+  const seedData = useCallback(async () => {
+    if (!confirm('Seed a large data set for performance testing?')) return;
+    const toteCountInput = prompt('How many totes?', '200');
+    const itemsPerToteInput = prompt('Items per tote?', '12');
+    const toteCount = Math.max(1, Number.parseInt(toteCountInput || '200', 10) || 200);
+    const itemsPerTote = Math.max(1, Number.parseInt(itemsPerToteInput || '12', 10) || 12);
+
+    let workingRooms = rooms;
+    if (workingRooms.length === 0) {
+      const defaults: Room[] = [
+        { name: 'Garage', icon: '🚗' },
+        { name: 'Kitchen', icon: '🍳' },
+        { name: 'Bedroom', icon: '🛏️' },
+        { name: 'Closet', icon: '🧥' },
+        { name: 'Basement', icon: '🧱' },
+        { name: 'Attic', icon: '🪜' },
+      ];
+      await saveRooms(defaults);
+      workingRooms = defaults;
+    }
+
+    const baseId = Date.now();
+    const newTotes: Tote[] = Array.from({ length: toteCount }, (_, index) => {
+      const room = workingRooms[index % workingRooms.length];
+      const items: Item[] = Array.from({ length: itemsPerTote }, (_, itemIndex) => ({
+        description: `Item ${index + 1}-${itemIndex + 1}`,
+        tags: ['seed', room.name.toLowerCase(), `batch-${Math.floor(index / 50) + 1}`],
+      }));
+      return {
+        id: baseId + index,
+        number: `Tote ${index + 1}`,
+        room: room.name,
+        items,
+        date: new Date().toLocaleDateString(),
+      };
+    });
+
+    await Promise.all(
+      newTotes.map((tote) => storage.set(`tote:${tote.id}`, JSON.stringify(tote)))
+    );
+    setTotes(prev => [...prev, ...newTotes]);
+    alert(`Seeded ${newTotes.length} totes with ${itemsPerTote} items each.`);
+  }, [rooms, saveRooms]);
 
   // Toggle dark mode
   const toggleDarkMode = useCallback(() => {
@@ -1079,8 +1207,16 @@ Return ONLY valid JSON: {"items": [{"description": "short item description", "ta
         </div>
       )}
 
+      <div className="marquee bg-black text-yellow-300 sticky top-0 z-20 h-8">
+        <div className="marquee__track h-8">
+          <span className="text-sm font-semibold tracking-wide">get organized bitch!</span>
+          <span className="text-sm font-semibold tracking-wide">get organized bitch!</span>
+          <span className="text-sm font-semibold tracking-wide">get organized bitch!</span>
+        </div>
+      </div>
+
       {/* Header */}
-      <div className={`${darkMode ? 'bg-gray-800' : 'bg-gradient-to-r from-purple-600 via-indigo-600 to-blue-500'} text-white sticky top-0 z-10 shadow-lg`}>
+      <div className={`${darkMode ? 'bg-gray-800' : 'bg-gradient-to-r from-purple-600 via-indigo-600 to-blue-500'} text-white sticky top-8 z-10 shadow-lg`}>
         <div className="px-4 py-4">
           <div className="flex items-center justify-center mb-2">
             <span className="text-3xl animate-bounce">🐐</span>
@@ -1101,6 +1237,17 @@ Return ONLY valid JSON: {"items": [{"description": "short item description", "ta
               <span>{userName || 'Guest'}</span>
             </div>
             <button
+              onClick={() => {
+                setRenameUserValue('Admin');
+                setShowRenameUser(true);
+              }}
+              className="bg-white/20 hover:bg-white/30 px-3 py-2 rounded-xl transition-all text-sm font-medium flex items-center gap-2"
+              title="Rename user"
+            >
+              <Edit2 className="w-4 h-4" />
+              Rename
+            </button>
+            <button
               onClick={logout}
               className="bg-white/20 hover:bg-white/30 px-3 py-2 rounded-xl transition-all text-sm font-medium"
               title="Sign out"
@@ -1116,6 +1263,11 @@ Return ONLY valid JSON: {"items": [{"description": "short item description", "ta
             <button onClick={() => setShowStats(true)} className="bg-white/20 hover:bg-white/30 p-2.5 rounded-xl transition-all" title="Statistics">
               <BarChart3 className="w-5 h-5" />
             </button>
+            {isDev && (
+              <button onClick={seedData} className="bg-white/20 hover:bg-white/30 p-2.5 rounded-xl transition-all" title="Seed data">
+                <Sparkles className="w-5 h-5" />
+              </button>
+            )}
             <button onClick={exportData} className="bg-white/20 hover:bg-white/30 p-2.5 rounded-xl transition-all" title="Export Data">
               <Download className="w-5 h-5" />
             </button>
@@ -1132,6 +1284,9 @@ Return ONLY valid JSON: {"items": [{"description": "short item description", "ta
             </button>
           </div>
           <p className="text-center text-white/70 text-xs mb-4">Tip: Search by description, brand, color, or tag.</p>
+          <div className="mx-auto mb-4 max-w-md rounded-xl border border-yellow-200/60 bg-yellow-100/20 px-4 py-2 text-center text-xs text-yellow-100">
+            Data stays only on this exact URL. Use your production/custom domain to keep totes.
+          </div>
 
           <div className="flex gap-2">
             <div className="relative flex-1">
@@ -1422,6 +1577,59 @@ Return ONLY valid JSON: {"items": [{"description": "short item description", "ta
                 <p className="font-semibold mb-2">Env Vars</p>
                 <p>Set keys in Vercel → Settings → Environment Variables.</p>
               </div>
+              <div className={`${darkMode ? 'bg-gray-700' : 'bg-yellow-50'} rounded-xl p-4`}>
+                <p className="font-semibold mb-2">Keep Your Data</p>
+                <p>Data is saved to this browser + URL only.</p>
+                <p>Use your production URL or custom domain every time.</p>
+                <p>Avoid preview links if you want data to persist.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Rename User Modal */}
+      {showRenameUser && (
+        <div
+          className="fixed inset-0 bg-black/50 z-30 flex items-center justify-center p-4"
+          onClick={() => setShowRenameUser(false)}
+        >
+          <div
+            className={`${darkMode ? 'bg-gray-800 text-white' : 'bg-white text-gray-800'} w-full max-w-md rounded-2xl p-6`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex justify-between items-center mb-4">
+              <div>
+                <h2 className="text-2xl font-bold">Rename User</h2>
+                <div className={`text-xs ${darkMode ? 'text-gray-300' : 'text-gray-500'}`}>Esc to close</div>
+              </div>
+              <button onClick={() => setShowRenameUser(false)} className={`p-2 ${darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'} rounded-full`}>
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="space-y-4">
+              <input
+                type="text"
+                value={renameUserValue}
+                onChange={(e) => setRenameUserValue(e.target.value)}
+                placeholder="New username"
+                className="w-full px-4 py-3 border border-gray-300 rounded-xl text-center text-lg"
+              />
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={renameDeleteOld}
+                  onChange={(e) => setRenameDeleteOld(e.target.checked)}
+                  className="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                />
+                Delete old username data after copy
+              </label>
+              <button
+                onClick={renameUser}
+                className="w-full bg-gradient-to-r from-indigo-500 to-purple-500 text-white py-3 rounded-xl font-semibold hover:from-indigo-600 hover:to-purple-600"
+              >
+                Update Username
+              </button>
             </div>
           </div>
         </div>
