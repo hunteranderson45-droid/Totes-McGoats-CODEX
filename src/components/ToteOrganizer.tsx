@@ -1665,14 +1665,14 @@ export default function ToteOrganizer() {
       {/* Add Tote Modal */}
       {showAddForm && (
         <div
-          className="fixed inset-0 bg-black/50 z-30 flex items-end sm:items-center justify-center"
+          className="fixed inset-0 bg-black/50 z-30 flex items-end sm:items-center justify-center p-0 sm:p-4"
           onClick={closeAddForm}
           role="dialog"
           aria-modal="true"
           aria-labelledby="add-tote-title"
         >
           <div
-            className="bg-white w-full h-[90vh] sm:h-auto sm:max-w-lg sm:rounded-2xl rounded-t-2xl p-4 sm:p-6 overflow-y-auto"
+            className="bg-white w-full max-h-[85vh] sm:max-h-[90vh] sm:max-w-lg sm:rounded-2xl rounded-t-2xl p-4 sm:p-6 overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex justify-between items-center mb-4">
