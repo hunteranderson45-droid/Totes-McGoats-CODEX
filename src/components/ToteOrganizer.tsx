@@ -105,6 +105,26 @@ const ToteCard = memo(function ToteCard({ tote, onClick }: ToteCardProps) {
 });
 
 export default function ToteOrganizer() {
+  const accessCode = (import.meta.env.VITE_ACCESS_CODE || '').trim();
+  const [accessGranted, setAccessGranted] = useState(() => {
+    const storedSession = sessionStorage.getItem('accessSession');
+    const storedLocal = localStorage.getItem('accessSession');
+    return Boolean(storedSession || storedLocal || !accessCode);
+  });
+  const [userName, setUserName] = useState(() => {
+    const storedSession = sessionStorage.getItem('accessSession');
+    const storedLocal = localStorage.getItem('accessSession');
+    try {
+      const parsed = JSON.parse(storedSession || storedLocal || '{}');
+      return parsed.userName || '';
+    } catch {
+      return '';
+    }
+  });
+  const [loginUserName, setLoginUserName] = useState('');
+  const [loginAccessCode, setLoginAccessCode] = useState('');
+  const [rememberMe, setRememberMe] = useState(true);
+
   // Security: PIN lock
   const [isLocked, setIsLocked] = useState(() => !!localStorage.getItem('appPin'));
   const [pinInput, setPinInput] = useState('');
@@ -113,6 +133,36 @@ export default function ToteOrganizer() {
   const [confirmPin, setConfirmPin] = useState('');
 
   const storedPin = localStorage.getItem('appPin');
+
+  const completeLogin = useCallback(() => {
+    if (!loginUserName.trim()) {
+      alert('Please enter a username');
+      return;
+    }
+    if (accessCode && loginAccessCode.trim() !== accessCode) {
+      alert('Incorrect access code');
+      return;
+    }
+    const payload = JSON.stringify({ userName: loginUserName.trim(), ts: Date.now() });
+    if (rememberMe) {
+      localStorage.setItem('accessSession', payload);
+      sessionStorage.removeItem('accessSession');
+    } else {
+      sessionStorage.setItem('accessSession', payload);
+      localStorage.removeItem('accessSession');
+    }
+    setUserName(loginUserName.trim());
+    setAccessGranted(true);
+    setLoginUserName('');
+    setLoginAccessCode('');
+  }, [loginUserName, loginAccessCode, rememberMe, accessCode]);
+
+  const logout = useCallback(() => {
+    localStorage.removeItem('accessSession');
+    sessionStorage.removeItem('accessSession');
+    setAccessGranted(false);
+    setUserName('');
+  }, []);
 
   const unlockApp = useCallback(() => {
     if (pinInput === storedPin) {
@@ -701,6 +751,100 @@ Return ONLY valid JSON: {"items": [{"description": "short item description", "ta
     }, {});
   }, [filteredTotes, sortBy]);
 
+  const closeAddForm = () => {
+    setShowAddForm(false);
+    setPreviewImage(null);
+    setCurrentTote('');
+    setCurrentRoom('');
+    setAnalyzedItems([]);
+  };
+
+  const closeAddItemModal = () => {
+    setShowAddItemModal(false);
+    setAddItemToteId(null);
+    setNewItemDescription('');
+    setNewItemTags('');
+  };
+
+  const closeMoveModal = () => {
+    setShowMoveModal(false);
+    setMovingItem(null);
+  };
+
+  const closeTopModal = useCallback(() => {
+    if (showSetPin) return setShowSetPin(false);
+    if (showMoveModal) return closeMoveModal();
+    if (showAddItemModal) return closeAddItemModal();
+    if (selectedTote) return setSelectedTote(null);
+    if (showAddForm) return closeAddForm();
+    if (showStats) return setShowStats(false);
+    if (showRoomManager) return setShowRoomManager(false);
+  }, [
+    showSetPin,
+    showMoveModal,
+    showAddItemModal,
+    selectedTote,
+    showAddForm,
+    showStats,
+    showRoomManager,
+  ]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeTopModal();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [closeTopModal]);
+
+  if (!accessGranted) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-indigo-600 via-blue-600 to-emerald-500 flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl p-8 w-full max-w-sm text-center shadow-2xl">
+          <div className="text-6xl mb-4">🔐🐐</div>
+          <h1 className="text-2xl font-bold text-gray-800 mb-2">Totes McGoats</h1>
+          <p className="text-gray-500 mb-6">Enter your access details</p>
+          <div className="space-y-4">
+            <input
+              type="text"
+              value={loginUserName}
+              onChange={(e) => setLoginUserName(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && completeLogin()}
+              placeholder="Username"
+              className="w-full px-4 py-3 border border-gray-300 rounded-xl text-center text-lg"
+              autoFocus
+            />
+            {accessCode && (
+              <input
+                type="password"
+                value={loginAccessCode}
+                onChange={(e) => setLoginAccessCode(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && completeLogin()}
+                placeholder="Access code"
+                className="w-full px-4 py-3 border border-gray-300 rounded-xl text-center text-lg"
+              />
+            )}
+            <label className="flex items-center justify-center gap-2 text-sm text-gray-600">
+              <input
+                type="checkbox"
+                checked={rememberMe}
+                onChange={(e) => setRememberMe(e.target.checked)}
+                className="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+              />
+              Remember me
+            </label>
+            <button
+              onClick={completeLogin}
+              className="w-full bg-gradient-to-r from-indigo-500 to-purple-500 text-white py-3 rounded-xl font-semibold hover:from-indigo-600 hover:to-purple-600"
+            >
+              Continue
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // Lock screen
   if (isLocked) {
     return (
@@ -733,14 +877,23 @@ Return ONLY valid JSON: {"items": [{"description": "short item description", "ta
     <div className={`min-h-screen transition-colors ${darkMode ? 'bg-gray-900 text-white' : 'bg-gradient-to-b from-gray-50 to-gray-100'}`}>
       {/* PIN Settings Modal */}
       {showSetPin && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} w-full max-w-sm rounded-2xl p-6`}>
+        <div
+          className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+          onClick={() => setShowSetPin(false)}
+        >
+          <div
+            className={`${darkMode ? 'bg-gray-800' : 'bg-white'} w-full max-w-sm rounded-2xl p-6`}
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex justify-between items-center mb-6">
-              <h2 className={`text-xl font-bold ${darkMode ? 'text-white' : 'text-gray-800'}`}>
-                <Lock className="inline w-5 h-5 mr-2" />
-                {storedPin ? 'Change PIN' : 'Set PIN'}
-              </h2>
-              <button onClick={() => setShowSetPin(false)} className="p-2 hover:bg-gray-100 rounded-full">
+              <div>
+                <h2 className={`text-xl font-bold ${darkMode ? 'text-white' : 'text-gray-800'}`}>
+                  <Lock className="inline w-5 h-5 mr-2" />
+                  {storedPin ? 'Change PIN' : 'Set PIN'}
+                </h2>
+                <div className={`text-xs ${darkMode ? 'text-gray-300' : 'text-gray-500'}`}>Esc to close</div>
+              </div>
+              <button onClick={() => setShowSetPin(false)} className={`p-2 rounded-full ${darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'}`}>
                 <X className="w-6 h-6" />
               </button>
             </div>
@@ -788,6 +941,17 @@ Return ONLY valid JSON: {"items": [{"description": "short item description", "ta
             <h1 className="text-2xl font-bold ml-2">Totes McGoats</h1>
           </div>
           <div className="flex justify-center gap-1.5 mb-4">
+            <div className="bg-white/15 px-3 py-2 rounded-xl text-sm font-medium flex items-center gap-2">
+              <span>👤</span>
+              <span>{userName || 'Guest'}</span>
+            </div>
+            <button
+              onClick={logout}
+              className="bg-white/20 hover:bg-white/30 px-3 py-2 rounded-xl transition-all text-sm font-medium"
+              title="Sign out"
+            >
+              Sign out
+            </button>
             <button onClick={() => setShowSetPin(true)} className="bg-white/20 hover:bg-white/30 p-2.5 rounded-xl transition-all" title={storedPin ? 'Change PIN' : 'Set PIN'}>
               {storedPin ? <Lock className="w-5 h-5" /> : <Unlock className="w-5 h-5" />}
             </button>
@@ -839,13 +1003,25 @@ Return ONLY valid JSON: {"items": [{"description": "short item description", "ta
 
       {/* Room Manager Modal */}
       {showRoomManager && (
-        <div className="fixed inset-0 bg-black/50 z-30 flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-md rounded-2xl p-6 max-h-[80vh] overflow-y-auto">
+        <div
+          className="fixed inset-0 bg-black/50 z-30 flex items-center justify-center p-4"
+          onClick={() => setShowRoomManager(false)}
+        >
+          <div
+            className={`${darkMode ? 'bg-gray-800 text-white' : 'bg-white text-gray-800'} w-full max-w-md rounded-2xl p-6 max-h-[80vh] overflow-y-auto`}
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex justify-between items-center mb-6">
-              <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
-                <span>🏠</span> Manage Rooms
-              </h2>
-              <button onClick={() => setShowRoomManager(false)} className="p-2 hover:bg-gray-100 rounded-full">
+              <div>
+                <h2 className="text-2xl font-bold flex items-center gap-2">
+                  <span>🏠</span> Manage Rooms
+                </h2>
+                <div className={`text-xs ${darkMode ? 'text-gray-300' : 'text-gray-500'}`}>Esc to close</div>
+              </div>
+              <button
+                onClick={() => setShowRoomManager(false)}
+                className={`p-2 rounded-full ${darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'}`}
+              >
                 <X className="w-6 h-6" />
               </button>
             </div>
@@ -855,7 +1031,7 @@ Return ONLY valid JSON: {"items": [{"description": "short item description", "ta
               <div className="flex gap-2 mb-3">
                 <button
                   type="button"
-                  className="px-3 py-3 text-2xl border border-gray-300 rounded-xl bg-gray-50"
+                  className={`px-3 py-3 text-2xl border rounded-xl ${darkMode ? 'border-gray-600 bg-gray-700' : 'border-gray-300 bg-gray-50'}`}
                 >
                   {newRoomIcon}
                 </button>
@@ -864,8 +1040,8 @@ Return ONLY valid JSON: {"items": [{"description": "short item description", "ta
                   value={newRoomName}
                   onChange={(e) => setNewRoomName(e.target.value)}
                   placeholder="New room name..."
-                  className="flex-1 px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500"
-                  onKeyPress={(e) => e.key === 'Enter' && addRoom()}
+                  className={`flex-1 px-4 py-3 border rounded-xl focus:ring-2 focus:ring-indigo-500 ${darkMode ? 'border-gray-600 bg-gray-700 text-white placeholder-gray-400' : 'border-gray-300 bg-white text-gray-800 placeholder-gray-400'}`}
+                  onKeyDown={(e) => e.key === 'Enter' && addRoom()}
                 />
                 <button
                   onClick={addRoom}
@@ -881,7 +1057,7 @@ Return ONLY valid JSON: {"items": [{"description": "short item description", "ta
                     key={icon}
                     type="button"
                     onClick={() => setNewRoomIcon(icon)}
-                    className={`w-9 h-9 text-lg rounded-lg transition-all ${newRoomIcon === icon ? 'bg-indigo-100 ring-2 ring-indigo-500 scale-110' : 'hover:bg-gray-100'}`}
+                    className={`w-9 h-9 text-lg rounded-lg transition-all ${newRoomIcon === icon ? 'bg-indigo-100 ring-2 ring-indigo-500 scale-110' : darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'}`}
                   >
                     {icon}
                   </button>
@@ -892,18 +1068,18 @@ Return ONLY valid JSON: {"items": [{"description": "short item description", "ta
             {/* Room List */}
             <div className="space-y-2">
               {rooms.length === 0 ? (
-                <p className="text-gray-500 text-center py-8">No rooms yet. Add one above!</p>
+                <p className={`${darkMode ? 'text-gray-300' : 'text-gray-500'} text-center py-8`}>No rooms yet. Add one above!</p>
               ) : (
                 rooms.map(room => {
                   const toteCount = totes.filter(t => t.room === room.name).length;
                   return (
-                    <div key={room.name} className="p-4 bg-gray-50 rounded-xl">
+                    <div key={room.name} className={`p-4 rounded-xl ${darkMode ? 'bg-gray-700' : 'bg-gray-50'}`}>
                       {editingRoom === room.name ? (
                         <div className="space-y-3">
                           <div className="flex gap-2">
                             <button
                               type="button"
-                              className="px-3 py-2 text-xl border border-gray-300 rounded-lg bg-white"
+                              className={`px-3 py-2 text-xl border rounded-lg ${darkMode ? 'border-gray-600 bg-gray-800' : 'border-gray-300 bg-white'}`}
                             >
                               {editRoomIcon}
                             </button>
@@ -911,9 +1087,9 @@ Return ONLY valid JSON: {"items": [{"description": "short item description", "ta
                               type="text"
                               value={editRoomName}
                               onChange={(e) => setEditRoomName(e.target.value)}
-                              className="flex-1 px-3 py-2 border border-gray-300 rounded-lg"
+                              className={`flex-1 px-3 py-2 border rounded-lg ${darkMode ? 'border-gray-600 bg-gray-800 text-white' : 'border-gray-300 bg-white text-gray-800'}`}
                               autoFocus
-                              onKeyPress={(e) => e.key === 'Enter' && updateRoom(room.name, editRoomName, editRoomIcon)}
+                              onKeyDown={(e) => e.key === 'Enter' && updateRoom(room.name, editRoomName, editRoomIcon)}
                             />
                           </div>
                           <div className="flex flex-wrap gap-1">
@@ -922,7 +1098,7 @@ Return ONLY valid JSON: {"items": [{"description": "short item description", "ta
                                 key={icon}
                                 type="button"
                                 onClick={() => setEditRoomIcon(icon)}
-                                className={`w-8 h-8 text-sm rounded-lg transition-all ${editRoomIcon === icon ? 'bg-indigo-100 ring-2 ring-indigo-500' : 'hover:bg-gray-200'}`}
+                                className={`w-8 h-8 text-sm rounded-lg transition-all ${editRoomIcon === icon ? 'bg-indigo-100 ring-2 ring-indigo-500' : darkMode ? 'hover:bg-gray-600' : 'hover:bg-gray-200'}`}
                               >
                                 {icon}
                               </button>
@@ -948,20 +1124,20 @@ Return ONLY valid JSON: {"items": [{"description": "short item description", "ta
                           <div className="flex items-center gap-3">
                             <span className="text-2xl">{room.icon}</span>
                             <div>
-                              <span className="font-medium text-gray-800">{room.name}</span>
-                              <span className="ml-2 text-sm text-gray-500">({toteCount} totes)</span>
+                              <span className="font-medium">{room.name}</span>
+                              <span className={`ml-2 text-sm ${darkMode ? 'text-gray-300' : 'text-gray-500'}`}>({toteCount} totes)</span>
                             </div>
                           </div>
                           <div className="flex gap-1">
                             <button
                               onClick={() => { setEditingRoom(room.name); setEditRoomName(room.name); setEditRoomIcon(room.icon); }}
-                              className="p-2 text-gray-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                              className={`p-2 rounded-lg transition-colors ${darkMode ? 'text-gray-300 hover:text-indigo-300 hover:bg-gray-600' : 'text-gray-500 hover:text-indigo-600 hover:bg-indigo-50'}`}
                             >
                               <Edit2 className="w-4 h-4" />
                             </button>
                             <button
                               onClick={() => deleteRoom(room.name)}
-                              className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                              className={`p-2 rounded-lg transition-colors ${darkMode ? 'text-gray-300 hover:text-red-400 hover:bg-gray-600' : 'text-gray-500 hover:text-red-600 hover:bg-red-50'}`}
                             >
                               <Trash2 className="w-4 h-4" />
                             </button>
@@ -973,18 +1149,36 @@ Return ONLY valid JSON: {"items": [{"description": "short item description", "ta
                 })
               )}
             </div>
+
+            <div className="mt-6">
+              <button
+                onClick={() => setShowRoomManager(false)}
+                className={`w-full py-3 rounded-xl font-semibold ${darkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-100 hover:bg-gray-200'}`}
+              >
+                Done
+              </button>
+            </div>
           </div>
         </div>
       )}
 
       {/* Stats Modal */}
       {showStats && (
-        <div className="fixed inset-0 bg-black/50 z-30 flex items-center justify-center p-4">
-          <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} w-full max-w-md rounded-2xl p-6 max-h-[80vh] overflow-y-auto`}>
+        <div
+          className="fixed inset-0 bg-black/50 z-30 flex items-center justify-center p-4"
+          onClick={() => setShowStats(false)}
+        >
+          <div
+            className={`${darkMode ? 'bg-gray-800' : 'bg-white'} w-full max-w-md rounded-2xl p-6 max-h-[80vh] overflow-y-auto`}
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex justify-between items-center mb-6">
-              <h2 className={`text-2xl font-bold ${darkMode ? 'text-white' : 'text-gray-800'} flex items-center gap-2`}>
-                <BarChart3 className="w-6 h-6" /> Statistics
-              </h2>
+              <div>
+                <h2 className={`text-2xl font-bold ${darkMode ? 'text-white' : 'text-gray-800'} flex items-center gap-2`}>
+                  <BarChart3 className="w-6 h-6" /> Statistics
+                </h2>
+                <div className={`text-xs ${darkMode ? 'text-gray-300' : 'text-gray-500'}`}>Esc to close</div>
+              </div>
               <button onClick={() => setShowStats(false)} className={`p-2 ${darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'} rounded-full`}>
                 <X className="w-6 h-6" />
               </button>
@@ -1036,20 +1230,23 @@ Return ONLY valid JSON: {"items": [{"description": "short item description", "ta
 
       {/* Add Tote Modal */}
       {showAddForm && (
-        <div className="fixed inset-0 bg-black/50 z-30 flex items-end sm:items-center justify-center">
-          <div className="bg-white w-full sm:max-w-lg sm:rounded-2xl rounded-t-2xl p-6 max-h-[90vh] overflow-y-auto">
+        <div
+          className="fixed inset-0 bg-black/50 z-30 flex items-end sm:items-center justify-center"
+          onClick={closeAddForm}
+        >
+          <div
+            className="bg-white w-full sm:max-w-lg sm:rounded-2xl rounded-t-2xl p-6 max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex justify-between items-center mb-4">
-              <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
-                <span>📦</span> Add New Tote
-              </h2>
+              <div>
+                <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
+                  <span>📦</span> Add New Tote
+                </h2>
+                <div className="text-xs text-gray-500">Esc to close</div>
+              </div>
               <button
-                onClick={() => {
-                  setShowAddForm(false);
-                  setPreviewImage(null);
-                  setCurrentTote('');
-                  setCurrentRoom('');
-                  setAnalyzedItems([]);
-                }}
+                onClick={closeAddForm}
                 className="p-2 hover:bg-gray-100 rounded-full"
               >
                 <X className="w-6 h-6" />
@@ -1146,8 +1343,14 @@ Return ONLY valid JSON: {"items": [{"description": "short item description", "ta
 
       {/* Tote Detail Modal */}
       {selectedTote && (
-        <div className="fixed inset-0 bg-black/50 z-30 flex items-end sm:items-center justify-center">
-          <div className="bg-white w-full sm:max-w-2xl sm:rounded-2xl rounded-t-2xl max-h-[90vh] overflow-y-auto">
+        <div
+          className="fixed inset-0 bg-black/50 z-30 flex items-end sm:items-center justify-center"
+          onClick={() => setSelectedTote(null)}
+        >
+          <div
+            className="bg-white w-full sm:max-w-2xl sm:rounded-2xl rounded-t-2xl max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
             {/* Tote Image Header */}
             {selectedTote.imageUrl && (
               <div className="relative">
@@ -1171,13 +1374,14 @@ Return ONLY valid JSON: {"items": [{"description": "short item description", "ta
                 </div>
               )}
 
-              <div className="flex items-start justify-between mb-4">
-                <div>
-                  <h2 className="text-2xl font-bold text-gray-800">{selectedTote.number}</h2>
-                  <div className="flex items-center gap-2 mt-1">
-                    <span className="text-lg">{getRoomIcon(selectedTote.room)}</span>
-                    <select
-                      value={selectedTote.room}
+            <div className="flex items-start justify-between mb-4">
+              <div>
+                <h2 className="text-2xl font-bold text-gray-800">{selectedTote.number}</h2>
+                <div className="text-xs text-gray-500">Esc to close</div>
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="text-lg">{getRoomIcon(selectedTote.room)}</span>
+                  <select
+                    value={selectedTote.room}
                       onChange={(e) => updateToteRoom(selectedTote.id, e.target.value)}
                       className="text-gray-600 bg-transparent border-none p-0 focus:ring-0 cursor-pointer"
                     >
@@ -1308,11 +1512,20 @@ Return ONLY valid JSON: {"items": [{"description": "short item description", "ta
 
       {/* Add Item Modal */}
       {showAddItemModal && (
-        <div className="fixed inset-0 bg-black/50 z-40 flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-md rounded-2xl p-6">
+        <div
+          className="fixed inset-0 bg-black/50 z-40 flex items-center justify-center p-4"
+          onClick={closeAddItemModal}
+        >
+          <div
+            className="bg-white w-full max-w-md rounded-2xl p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-bold text-gray-800">Add Item</h2>
-              <button onClick={() => { setShowAddItemModal(false); setAddItemToteId(null); setNewItemDescription(''); setNewItemTags(''); }} className="p-2 hover:bg-gray-100 rounded-full">
+              <div>
+                <h2 className="text-xl font-bold text-gray-800">Add Item</h2>
+                <div className="text-xs text-gray-500">Esc to close</div>
+              </div>
+              <button onClick={closeAddItemModal} className="p-2 hover:bg-gray-100 rounded-full">
                 <X className="w-6 h-6" />
               </button>
             </div>
@@ -1345,11 +1558,20 @@ Return ONLY valid JSON: {"items": [{"description": "short item description", "ta
 
       {/* Move Item Modal */}
       {showMoveModal && movingItem && (
-        <div className="fixed inset-0 bg-black/50 z-40 flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-md rounded-2xl p-6 max-h-[80vh] overflow-y-auto">
+        <div
+          className="fixed inset-0 bg-black/50 z-40 flex items-center justify-center p-4"
+          onClick={closeMoveModal}
+        >
+          <div
+            className="bg-white w-full max-w-md rounded-2xl p-6 max-h-[80vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-bold text-gray-800">Move Item</h2>
-              <button onClick={() => { setShowMoveModal(false); setMovingItem(null); }} className="p-2 hover:bg-gray-100 rounded-full">
+              <div>
+                <h2 className="text-xl font-bold text-gray-800">Move Item</h2>
+                <div className="text-xs text-gray-500">Esc to close</div>
+              </div>
+              <button onClick={closeMoveModal} className="p-2 hover:bg-gray-100 rounded-full">
                 <X className="w-6 h-6" />
               </button>
             </div>

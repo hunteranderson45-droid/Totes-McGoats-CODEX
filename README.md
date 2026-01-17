@@ -18,7 +18,7 @@ npm install
 cp .env.example .env
 ```
 
-Set `VITE_ANTHROPIC_API_KEY` in `.env`, then:
+Set `VITE_ANTHROPIC_API_KEY` in `.env`. If you want a simple shared gate, also set `VITE_ACCESS_CODE` (optional), then:
 
 ```bash
 npm run dev
@@ -29,9 +29,12 @@ npm run dev
 1. Push this repo to GitHub.
 2. Create a new Vercel project from the repo.
 3. Set `VITE_ANTHROPIC_API_KEY` as an environment variable in Vercel.
+4. (Optional) Set `VITE_ACCESS_CODE` for a shared access gate.
 4. Deploy. The default Vite build works out of the box.
 
 ## Notes
 
 - The Anthropic API key is used in the browser. Treat this as a prototype and use a restricted key.
+- The access code is also client-side and should be treated as a lightweight gate, not strong security.
+- iOS: open the site in Safari and use Share → Add to Home Screen to install.
 - All data is stored locally in the browser (localStorage) and is not synced.
